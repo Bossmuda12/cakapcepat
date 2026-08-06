@@ -11,6 +11,9 @@ import Contacts from "./pages/Contacts";
 import Conversations from "./pages/Conversations";
 import Broadcasts from "./pages/Broadcasts";
 import Team from "./pages/Team";
+import Ctwa from "./pages/Ctwa";
+import Automations from "./pages/Automations";
+import KnowledgeBase from "./pages/KnowledgeBase";
 
 function Gate({ children }) {
   const { user, loading, needsBootstrap } = useAuth();
@@ -27,12 +30,15 @@ function AppRoutes() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Overview />} />
-          <Route path="/departments" element={<Departments />} />
-          <Route path="/products" element={<Products />} />
-          <Route path="/channels" element={<Channels />} />
-          <Route path="/contacts" element={<Contacts />} />
           <Route path="/conversations" element={<Conversations />} />
+          <Route path="/contacts" element={<Contacts />} />
           <Route path="/broadcasts" element={<Broadcasts />} />
+          <Route path="/ctwa" element={<Ctwa />} />
+          <Route path="/automations" element={<Automations />} />
+          <Route path="/knowledge-base" element={<KnowledgeBase />} />
+          <Route path="/channels" element={<Channels />} />
+          <Route path="/products" element={<Products />} />
+          <Route path="/departments" element={<Departments />} />
           <Route path="/team" element={<Team />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
