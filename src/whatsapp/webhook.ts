@@ -145,15 +145,95 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
     [conversationId, msg.id, JSON.stringify({ body: textBody })]
   );
 
-  // Fallback ke AI chatbot kalau tidak ada auto-reply keyword yang cocok.
-  // TODO developer: cek dulu ke tabel `automations` (trigger_type = 'keyword') sebelum jatuh ke AI.
-  const aiReply = await maybeGenerateAiReply({ organizationId, conversationId, incomingText: textBody });
-  if (aiReply) {
-    await sendTextMessage({ to: msg.from, body: aiReply, phoneNumberId, accessToken: channel.access_token });
+  await maybeAutoReply({
+    organizationId,
+    conversationId,
+    channelId: channel.id,
+    to: msg.from,
+    phoneNumberId,
+    accessToken: channel.access_token,
+    incomingText: textBody,
+  });
+}
+
+interface AutoReplyParams {
+  organizationId: string;
+  conversationId: string;
+  channelId: string;
+  to: string;
+  phoneNumberId: string;
+  accessToken: string;
+  incomingText: string;
+}
+
+/**
+ * Urutan auto-reply (lihat halaman "Otomatisasi" di dashboard):
+ *   1. Aturan keyword yang cocok — balas langsung, berhenti di sini.
+ *   2. Aturan office_hours — kalau di luar jam kerja, kirim balasan itu, berhenti.
+ *   3. Fallback ke AI chatbot — hanya kalau ada automation aktif bertipe
+ *      'fallback_to_ai' UNTUK channel ini, ATAU channel belum punya automation
+ *      sama sekali (supaya perilaku lama tetap jalan kalau belum diatur manual).
+ */
+async function maybeAutoReply(params: AutoReplyParams) {
+  const { organizationId, conversationId, channelId, to, phoneNumberId, accessToken, incomingText } = params;
+
+  const { rows: automations } = await pool.query(
+    "SELECT trigger_type, config, is_active FROM automations WHERE channel_id = $1",
+    [channelId]
+  );
+
+  const sendAndLog = async (replyText: string, senderType: "human" | "ai" = "human") => {
+    await sendTextMessage({ to, body: replyText, phoneNumberId, accessToken });
     await pool.query(
       `INSERT INTO messages (conversation_id, direction, sender_type, content_type, content, status)
-       VALUES ($1, 'outbound', 'ai', 'text', $2, 'sent')`,
-      [conversationId, JSON.stringify({ body: aiReply })]
+       VALUES ($1, 'outbound', $2, 'text', $3, 'sent')`,
+      [conversationId, senderType, JSON.stringify({ body: replyText })]
     );
+  };
+
+  const activeKeywordRules = automations.filter((a) => a.trigger_type === "keyword" && a.is_active);
+  for (const rule of activeKeywordRules) {
+    const keyword: string | undefined = rule.config?.keyword;
+    const reply: string | undefined = rule.config?.reply;
+    if (keyword && reply && incomingText.toLowerCase().includes(keyword.toLowerCase())) {
+      await sendAndLog(reply);
+      return;
+    }
   }
+
+  const officeHoursRule = automations.find((a) => a.trigger_type === "office_hours" && a.is_active);
+  if (officeHoursRule && isOutsideOfficeHours(officeHoursRule.config)) {
+    const reply: string | undefined = officeHoursRule.config?.outsideReply;
+    if (reply) {
+      await sendAndLog(reply);
+      return;
+    }
+  }
+
+  const hasFallbackToAiRule = automations.some((a) => a.trigger_type === "fallback_to_ai" && a.is_active);
+  const noAutomationsConfigured = automations.length === 0;
+  if (hasFallbackToAiRule || noAutomationsConfigured) {
+    const aiReply = await maybeGenerateAiReply({ organizationId, conversationId, incomingText });
+    if (aiReply) {
+      await sendAndLog(aiReply, "ai");
+    }
+  }
+}
+
+// Zona waktu Indonesia Barat (WIB, UTC+7) dipakai sebagai default kalau
+// config.timezone tidak diisi — cukup untuk kebanyakan tim internal di Indonesia.
+function isOutsideOfficeHours(cfg: { start?: string; end?: string; utcOffsetHours?: number }): boolean {
+  const start = cfg?.start ?? "09:00";
+  const end = cfg?.end ?? "17:00";
+  const offset = cfg?.utcOffsetHours ?? 7;
+
+  const now = new Date();
+  const localMinutes = ((now.getUTCHours() + offset) * 60 + now.getUTCMinutes()) % (24 * 60);
+
+  const [startH, startM] = start.split(":").map(Number);
+  const [endH, endM] = end.split(":").map(Number);
+  const startMinutes = startH * 60 + startM;
+  const endMinutes = endH * 60 + endM;
+
+  return localMinutes < startMinutes || localMinutes >= endMinutes;
 }

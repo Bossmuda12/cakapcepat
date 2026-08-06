@@ -59,7 +59,17 @@ export async function sendTemplateMessage({
   });
 }
 
-async function callGraphApi(phoneNumberId: string, accessToken: string, payload: unknown) {
+interface WhatsAppSendResult {
+  messaging_product?: string;
+  contacts?: { input: string; wa_id: string }[];
+  messages?: { id: string }[];
+}
+
+async function callGraphApi(
+  phoneNumberId: string,
+  accessToken: string,
+  payload: unknown
+): Promise<WhatsAppSendResult> {
   if (!phoneNumberId || !accessToken) {
     throw new Error(
       "WhatsApp belum dikonfigurasi — isi WHATSAPP_PHONE_NUMBER_ID & WHATSAPP_ACCESS_TOKEN di .env " +
@@ -74,7 +84,7 @@ async function callGraphApi(phoneNumberId: string, accessToken: string, payload:
     body: JSON.stringify(payload),
   });
 
-  const data = await res.json();
+  const data = (await res.json()) as WhatsAppSendResult;
   if (!res.ok) {
     throw new Error(`WhatsApp API error (${res.status}): ${JSON.stringify(data)}`);
   }

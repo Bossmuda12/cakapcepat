@@ -24,21 +24,29 @@ export async function reportConversionToMeta({
   currency = "IDR",
 }: ReportConversionParams) {
   const { rows } = await pool.query(
-    "SELECT ctwa_clid, conversion_reported FROM conversations WHERE id = $1",
+    `SELECT conv.ctwa_clid, conv.conversion_reported, o.capi_pixel_id, o.capi_access_token
+     FROM conversations conv
+     JOIN contacts c ON c.id = conv.contact_id
+     JOIN organization o ON o.id = c.organization_id
+     WHERE conv.id = $1`,
     [conversationId]
   );
-  const conversation = rows[0];
+  const row = rows[0];
 
-  if (!conversation?.ctwa_clid) {
+  if (!row?.ctwa_clid) {
     // Bukan chat yang datang dari iklan CTWA — tidak ada yang bisa dilaporkan.
     console.log(`[capi] Conversation ${conversationId} tidak punya ctwa_clid, dilewati.`);
     return null;
   }
 
-  if (!config.capi.pixelId || !config.capi.accessToken) {
+  // Kredensial CAPI: utamakan yang diatur lewat dashboard (tabel organization),
+  // fallback ke env var kalau belum diisi lewat dashboard.
+  const pixelId: string | undefined = row.capi_pixel_id || config.capi.pixelId || undefined;
+  const accessToken: string | undefined = row.capi_access_token || config.capi.accessToken || undefined;
+
+  if (!pixelId || !accessToken) {
     throw new Error(
-      "Meta CAPI belum dikonfigurasi — isi META_PIXEL_ID & META_CAPI_ACCESS_TOKEN di .env " +
-        "(lihat Bab 8 dokumen rencana untuk cara mendapatkannya)."
+      "Meta CAPI belum dikonfigurasi — isi Pixel ID & Access Token di halaman CTWA & Iklan pada dashboard."
     );
   }
 
@@ -49,13 +57,13 @@ export async function reportConversionToMeta({
         event_time: Math.floor(Date.now() / 1000),
         action_source: "business_messaging",
         messaging_channel: "whatsapp",
-        ctwa_clid: conversation.ctwa_clid,
+        ctwa_clid: row.ctwa_clid,
         ...(value !== undefined ? { custom_data: { value, currency } } : {}),
       },
     ],
   };
 
-  const url = `https://graph.facebook.com/${config.whatsapp.graphApiVersion}/${config.capi.pixelId}/events?access_token=${config.capi.accessToken}`;
+  const url = `https://graph.facebook.com/${config.whatsapp.graphApiVersion}/${pixelId}/events?access_token=${accessToken}`;
 
   const res = await fetch(url, {
     method: "POST",
@@ -67,7 +75,7 @@ export async function reportConversionToMeta({
   await pool.query(
     `INSERT INTO ad_conversion_events (conversation_id, event_name, ctwa_clid, payload_sent, response_status)
      VALUES ($1, $2, $3, $4, $5)`,
-    [conversationId, eventName, conversation.ctwa_clid, JSON.stringify(payload), res.status]
+    [conversationId, eventName, row.ctwa_clid, JSON.stringify(payload), res.status]
   );
 
   if (res.ok) {
