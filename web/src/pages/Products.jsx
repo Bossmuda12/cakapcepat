@@ -35,6 +35,15 @@ export default function Products() {
     }
   };
 
+  const toggleActive = async (product) => {
+    try {
+      await api.patch(`/products/${product.id}`, { isActive: !product.is_active });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
   return (
     <div>
       <h1>Produk</h1>
@@ -64,6 +73,7 @@ export default function Products() {
                 <th>Nama</th>
                 <th>Status</th>
                 <th>Jumlah Nomor WA</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -76,6 +86,11 @@ export default function Products() {
                     </span>
                   </td>
                   <td>{r.channel_count}</td>
+                  <td>
+                    <button className="btn secondary" onClick={() => toggleActive(r)}>
+                      {r.is_active ? "Nonaktifkan" : "Aktifkan"}
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
