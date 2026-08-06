@@ -17,6 +17,8 @@ const emptyForm = {
   outsideReply: "",
 };
 
+const emptyAiForm = { apiKey: "", model: "", systemPrompt: "" };
+
 export default function Automations() {
   const [rows, setRows] = useState(null);
   const [channels, setChannels] = useState([]);
@@ -25,11 +27,23 @@ export default function Automations() {
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
+  const [settings, setSettings] = useState(null);
+  const [aiForm, setAiForm] = useState(emptyAiForm);
+  const [aiError, setAiError] = useState("");
+  const [aiSaved, setAiSaved] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+
   const load = async () => {
     try {
-      const [a, c] = await Promise.all([api.get("/automations"), api.get("/channels")]);
+      const [a, c, s] = await Promise.all([
+        api.get("/automations"),
+        api.get("/channels"),
+        api.get("/settings"),
+      ]);
       setRows(a);
       setChannels(c);
+      setSettings(s);
+      setAiForm((f) => ({ ...f, model: s.ai.model || "", systemPrompt: s.ai.systemPrompt || "" }));
     } catch (err) {
       setError(err.message);
     }
@@ -92,6 +106,28 @@ export default function Automations() {
     return "Kalau tidak ada aturan lain yang cocok, biarkan AI chatbot menjawab";
   };
 
+  const onSaveAi = async (e) => {
+    e.preventDefault();
+    setAiBusy(true);
+    setAiError("");
+    setAiSaved(false);
+    try {
+      const payload = {
+        model: aiForm.model || undefined,
+        systemPrompt: aiForm.systemPrompt || undefined,
+      };
+      if (aiForm.apiKey) payload.apiKey = aiForm.apiKey;
+      await api.put("/settings/ai", payload);
+      setAiForm((f) => ({ ...f, apiKey: "" }));
+      setAiSaved(true);
+      await load();
+    } catch (err) {
+      setAiError(err.message);
+    } finally {
+      setAiBusy(false);
+    }
+  };
+
   return (
     <div>
       <div className="toolbar">
@@ -105,6 +141,67 @@ export default function Automations() {
       </div>
 
       {error && <div className="error-box">{error}</div>}
+
+      <form className="panel" onSubmit={onSaveAi}>
+        <h2>AI Chatbot (Claude)</h2>
+        <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: -8, marginBottom: 16 }}>
+          API key didapat dari{" "}
+          <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
+            console.anthropic.com/settings/keys
+          </a>
+          . AI hanya menjawab pakai isi Knowledge Base — kalau tidak tahu, dia bilang tidak tahu.
+          {settings && (
+            <>
+              {" "}
+              Status saat ini:{" "}
+              {settings.ai.configured ? (
+                <span className="badge green">Terkonfigurasi</span>
+              ) : (
+                <span className="badge gray">Belum diisi</span>
+              )}
+            </>
+          )}
+        </p>
+        {aiError && <div className="error-box">{aiError}</div>}
+        {aiSaved && (
+          <div className="panel" style={{ borderColor: "#bbf7d0", background: "#f0fdf4", padding: 10, marginBottom: 14 }}>
+            Tersimpan.
+          </div>
+        )}
+        <div className="inline-form">
+          <div className="field">
+            <label>
+              Claude API Key {settings?.ai.apiKeyMasked ? `(saat ini: ${settings.ai.apiKeyMasked})` : ""}
+            </label>
+            <input
+              type="password"
+              value={aiForm.apiKey}
+              onChange={(e) => setAiForm((f) => ({ ...f, apiKey: e.target.value }))}
+              placeholder="sk-ant-... (kosongkan kalau tidak diganti)"
+            />
+          </div>
+          <div className="field">
+            <label>Model</label>
+            <input
+              value={aiForm.model}
+              onChange={(e) => setAiForm((f) => ({ ...f, model: e.target.value }))}
+              placeholder="claude-haiku-4-5-20251001"
+            />
+          </div>
+        </div>
+        <div className="field">
+          <label>Persona / instruksi tambahan (opsional)</label>
+          <textarea
+            rows={3}
+            value={aiForm.systemPrompt}
+            onChange={(e) => setAiForm((f) => ({ ...f, systemPrompt: e.target.value }))}
+            placeholder="mis. Kamu adalah CS toko skincare, jawab ramah & singkat, pakai emoji sesekali."
+          />
+        </div>
+        <button className="btn" type="submit" disabled={aiBusy} style={{ marginTop: 4 }}>
+          {aiBusy ? "Menyimpan..." : "Simpan Pengaturan AI"}
+        </button>
+      </form>
 
       {showForm && (
         <form className="panel" onSubmit={onCreate}>
@@ -164,7 +261,7 @@ export default function Automations() {
           {form.triggerType === "fallback_to_ai" && (
             <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
               Tidak perlu isian tambahan — AI akan menjawab pakai Knowledge Base kalau tidak ada
-              aturan kata kunci/jam kerja yang cocok, dan kalau AI_PROVIDER_API_KEY sudah diisi.
+              aturan kata kunci/jam kerja yang cocok, dan kalau pengaturan AI di atas sudah diisi.
             </p>
           )}
 
