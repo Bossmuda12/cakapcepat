@@ -173,3 +173,8 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id
 CREATE INDEX IF NOT EXISTS idx_broadcast_recipients_broadcast ON broadcast_recipients(broadcast_id);
 CREATE INDEX IF NOT EXISTS idx_channels_owner ON whatsapp_channels(owner_user_id);
 CREATE INDEX IF NOT EXISTS idx_channels_product ON whatsapp_channels(product_id);
+
+-- Kredensial Meta Conversions API (CAPI) — disimpan di sini supaya bisa diatur
+-- lewat dashboard (halaman CTWA & Iklan), bukan cuma lewat env var.
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS capi_pixel_id TEXT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS capi_access_token TEXT;
