@@ -178,3 +178,9 @@ CREATE INDEX IF NOT EXISTS idx_channels_product ON whatsapp_channels(product_id)
 -- lewat dashboard (halaman CTWA & Iklan), bukan cuma lewat env var.
 ALTER TABLE organization ADD COLUMN IF NOT EXISTS capi_pixel_id TEXT;
 ALTER TABLE organization ADD COLUMN IF NOT EXISTS capi_access_token TEXT;
+
+-- Kredensial & konfigurasi AI chatbot (Claude API) — disimpan di sini supaya
+-- bisa diatur lewat dashboard (halaman Otomatisasi), bukan cuma lewat env var.
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_api_key TEXT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_model TEXT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_system_prompt TEXT;
