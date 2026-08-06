@@ -13,6 +13,9 @@ import { channelsRouter } from "./routes/channels";
 import { contactsRouter } from "./routes/contacts";
 import { conversationsRouter } from "./routes/conversations";
 import { broadcastsRouter } from "./routes/broadcasts";
+import { settingsRouter } from "./routes/settings";
+import { automationsRouter } from "./routes/automations";
+import { knowledgeBaseRouter } from "./routes/knowledgeBase";
 
 const app = express();
 
@@ -39,6 +42,9 @@ app.use("/api", channelsRouter);
 app.use("/api", contactsRouter);
 app.use("/api", conversationsRouter);
 app.use("/api", broadcastsRouter);
+app.use("/api", settingsRouter);
+app.use("/api", automationsRouter);
+app.use("/api", knowledgeBaseRouter);
 
 // Dashboard web (React, di-build ke folder public/) — disajikan langsung
 // dari service backend yang sama, supaya nggak perlu deploy terpisah.
