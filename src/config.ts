@@ -32,6 +32,7 @@ export const config = {
 
   ai: {
     apiKey: process.env.AI_PROVIDER_API_KEY ?? "",
+    model: process.env.AI_MODEL ?? "claude-haiku-4-5-20251001",
   },
 
   broadcastRatePerMinute: Number(process.env.BROADCAST_RATE_PER_MINUTE ?? 60),
