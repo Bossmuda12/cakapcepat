@@ -18,7 +18,9 @@ import { broadcastsRouter } from "./routes/broadcasts";
 import { settingsRouter } from "./routes/settings";
 import { automationsRouter } from "./routes/automations";
 import { knowledgeBaseRouter } from "./routes/knowledgeBase";
+import { leadsRouter } from "./routes/leads";
 import { initRealtime } from "./realtime";
+import { initScheduler } from "./scheduler";
 
 const app = express();
 
@@ -49,6 +51,7 @@ app.use("/api", broadcastsRouter);
 app.use("/api", settingsRouter);
 app.use("/api", automationsRouter);
 app.use("/api", knowledgeBaseRouter);
+app.use("/api", leadsRouter);
 
 // Dashboard web (React, di-build ke folder public/) — disajikan langsung
 // dari service backend yang sama, supaya nggak perlu deploy terpisah.
@@ -82,6 +85,7 @@ app.use(
 
 const server = http.createServer(app);
 initRealtime(server);
+initScheduler();
 
 server.listen(config.port, () => {
   console.log(`[server] CakapCepat berjalan di http://localhost:${config.port} (env: ${config.nodeEnv})`);
