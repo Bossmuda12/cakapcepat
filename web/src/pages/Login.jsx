@@ -24,8 +24,12 @@ export default function Login() {
   return (
     <div className="auth-shell">
       <div className="auth-card">
+        <div className="auth-logo">
+          <img src="/logo.png" alt="CakapCepat" />
+          <div className="auth-logo-by">By TahaGroup</div>
+        </div>
         <h1>Masuk ke CakapCepat</h1>
-        <p className="subtitle">by TahaGroup — otomasi WhatsApp internal</p>
+        <p className="subtitle">Otomasi WhatsApp internal</p>
         {error && <div className="error-box">{error}</div>}
         <form onSubmit={onSubmit}>
           <div className="field">
