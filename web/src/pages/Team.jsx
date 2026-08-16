@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
+import Modal from "../components/Modal";
 
 const emptyForm = { name: "", email: "", password: "", role: "agent" };
 
@@ -98,46 +99,42 @@ export default function Team() {
         )}
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && !showForm && <div className="error-box">{error}</div>}
 
-      {showForm && (
-        <form className="panel" onSubmit={onCreate}>
-          <h2>Tambah anggota tim baru</h2>
-          <div className="inline-form">
-            <div className="field">
-              <label>Nama</label>
-              <input value={form.name} onChange={update("name")} required />
-            </div>
-            <div className="field">
-              <label>Email</label>
-              <input type="email" value={form.email} onChange={update("email")} required />
-            </div>
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Tambah anggota tim baru">
+        <form onSubmit={onCreate}>
+          {error && <div className="error-box">{error}</div>}
+          <div className="field">
+            <label>Nama</label>
+            <input value={form.name} onChange={update("name")} required />
           </div>
-          <div className="inline-form">
-            <div className="field">
-              <label>Password sementara (min. 8 karakter)</label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={update("password")}
-                minLength={8}
-                required
-              />
-            </div>
-            <div className="field">
-              <label>Peran</label>
-              <select value={form.role} onChange={update("role")}>
-                <option value="agent">Agent (CS)</option>
-                <option value="admin">Admin</option>
-                <option value="owner">Owner</option>
-              </select>
-            </div>
+          <div className="field">
+            <label>Email</label>
+            <input type="email" value={form.email} onChange={update("email")} required />
           </div>
-          <button className="btn" type="submit" disabled={busy}>
+          <div className="field">
+            <label>Password sementara (min. 8 karakter)</label>
+            <input
+              type="password"
+              value={form.password}
+              onChange={update("password")}
+              minLength={8}
+              required
+            />
+          </div>
+          <div className="field">
+            <label>Peran</label>
+            <select value={form.role} onChange={update("role")}>
+              <option value="agent">Agent (CS)</option>
+              <option value="admin">Admin</option>
+              <option value="owner">Owner</option>
+            </select>
+          </div>
+          <button className="btn block" type="submit" disabled={busy}>
             {busy ? "Menyimpan..." : "Simpan"}
           </button>
         </form>
-      )}
+      </Modal>
 
       {rows === null ? (
         <div className="loading-block">Memuat...</div>

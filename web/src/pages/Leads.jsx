@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import DateRangeFilter from "../components/DateRangeFilter";
+import { defaultRange } from "../dateRangePresets";
 
 function formatRupiah(value) {
   if (value === null || value === undefined) return "—";
@@ -53,6 +55,8 @@ export default function Leads() {
   const [savingSettings, setSavingSettings] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
+  const [historyRange, setHistoryRange] = useState(defaultRange());
+  const [history, setHistory] = useState(null);
 
   const load = async () => {
     try {
@@ -74,6 +78,21 @@ export default function Leads() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .get(`/leads/history?from=${historyRange.from}&to=${historyRange.to}`)
+      .then((data) => {
+        if (!cancelled) setHistory(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [historyRange.from, historyRange.to]);
 
   const runAnalysis = async () => {
     setAnalyzing(true);
@@ -179,6 +198,41 @@ export default function Leads() {
         tone="red"
         emptyText="Belum ada drop leads terdeteksi."
       />
+
+      <div className="panel">
+        <div className="toolbar" style={{ marginBottom: 14 }}>
+          <h2 style={{ margin: 0 }}>Riwayat Analisis</h2>
+          <DateRangeFilter value={historyRange} onChange={setHistoryRange} />
+        </div>
+        {!history ? (
+          <div className="loading-block">Memuat...</div>
+        ) : history.length === 0 ? (
+          <div className="empty-state">Belum ada analisis pada rentang tanggal ini.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Tanggal</th>
+                <th>Hot</th>
+                <th>Warm</th>
+                <th>Drop</th>
+                <th>Estimasi Potensi</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((h) => (
+                <tr key={h.id}>
+                  <td>{new Date(h.created_at).toLocaleString("id-ID")}</td>
+                  <td>{(h.hot_leads ?? []).length}</td>
+                  <td>{(h.warm_leads ?? []).length}</td>
+                  <td>{(h.drop_leads ?? []).length}</td>
+                  <td>{formatRupiah(h.estimated_value)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       <div className="panel">
         <h2>⚠️ Perlu perhatian (SOP &amp; fraud check ringan)</h2>

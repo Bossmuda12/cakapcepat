@@ -20,6 +20,7 @@ import { automationsRouter } from "./routes/automations";
 import { knowledgeBaseRouter } from "./routes/knowledgeBase";
 import { leadsRouter } from "./routes/leads";
 import { teamRouter } from "./routes/team";
+import { statsRouter } from "./routes/stats";
 import { initRealtime } from "./realtime";
 import { initScheduler } from "./scheduler";
 
@@ -54,6 +55,7 @@ app.use("/api", automationsRouter);
 app.use("/api", knowledgeBaseRouter);
 app.use("/api", leadsRouter);
 app.use("/api", teamRouter);
+app.use("/api", statsRouter);
 
 // Dashboard web (React, di-build ke folder public/) — disajikan langsung
 // dari service backend yang sama, supaya nggak perlu deploy terpisah.
