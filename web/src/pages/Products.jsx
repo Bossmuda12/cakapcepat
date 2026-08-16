@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Modal from "../components/Modal";
 
 export default function Products() {
   const [rows, setRows] = useState(null);
   const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const load = async () => {
     try {
@@ -27,6 +29,7 @@ export default function Products() {
     try {
       await api.post("/products", { name });
       setName("");
+      setShowForm(false);
       await load();
     } catch (err) {
       setError(err.message);
@@ -46,20 +49,36 @@ export default function Products() {
 
   return (
     <div>
-      <h1>Produk</h1>
-      <p className="page-subtitle">Lini bisnis/produk — tiap produk baru biasanya dapat nomor WA & CS sendiri.</p>
-
-      {error && <div className="error-box">{error}</div>}
-
-      <form className="inline-form" onSubmit={onCreate}>
-        <div className="field">
-          <label>Nama produk baru</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="mis. Skincare Line" />
+      <div className="toolbar">
+        <div>
+          <h1>Produk</h1>
+          <p className="page-subtitle">Lini bisnis/produk — tiap produk baru biasanya dapat nomor WA & CS sendiri.</p>
         </div>
-        <button className="btn" type="submit" disabled={busy}>
-          Tambah
+        <button className="btn" onClick={() => setShowForm(true)}>
+          + Tambah Produk
         </button>
-      </form>
+      </div>
+
+      {error && !showForm && <div className="error-box">{error}</div>}
+
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Tambah produk baru">
+        <form onSubmit={onCreate}>
+          {error && <div className="error-box">{error}</div>}
+          <div className="field">
+            <label>Nama produk</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="mis. Skincare Line"
+              autoFocus
+              required
+            />
+          </div>
+          <button className="btn block" type="submit" disabled={busy}>
+            {busy ? "Menyimpan..." : "Simpan"}
+          </button>
+        </form>
+      </Modal>
 
       <div className="panel">
         {rows === null ? (

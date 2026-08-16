@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Modal from "../components/Modal";
 
 const emptyForm = {
   label: "",
@@ -82,17 +83,17 @@ export default function Channels() {
           <h1>Nomor WhatsApp</h1>
           <p className="page-subtitle">Setiap CS bisa punya nomor sendiri; produk baru bisa dapat nomor baru.</p>
         </div>
-        <button className="btn" onClick={() => setShowForm((s) => !s)}>
-          {showForm ? "Batal" : "+ Daftarkan Nomor"}
+        <button className="btn" onClick={() => setShowForm(true)}>
+          + Daftarkan Nomor
         </button>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && !showForm && <div className="error-box">{error}</div>}
 
-      {showForm && (
-        <form className="panel" onSubmit={onCreate}>
-          <h2>Daftarkan nomor WhatsApp baru</h2>
-          <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: -8, marginBottom: 16 }}>
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Daftarkan nomor WhatsApp baru" width={560}>
+        <form onSubmit={onCreate}>
+          {error && <div className="error-box">{error}</div>}
+          <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: -4, marginBottom: 16 }}>
             Phone Number ID &amp; Access Token didapat dari Meta Business Manager setelah nomor
             ditambahkan ke WhatsApp Business Account kamu — bukan nomor teleponnya sendiri.
           </p>
@@ -155,11 +156,11 @@ export default function Channels() {
               </select>
             </div>
           </div>
-          <button className="btn" type="submit" disabled={busy}>
+          <button className="btn block" type="submit" disabled={busy}>
             {busy ? "Menyimpan..." : "Simpan Nomor"}
           </button>
         </form>
-      )}
+      </Modal>
 
       <div className="panel">
         {rows === null ? (
