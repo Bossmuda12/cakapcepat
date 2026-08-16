@@ -189,3 +189,24 @@ ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_system_prompt TEXT;
 -- Monitor untuk menghitung performa per CS (jumlah pesan terkirim hari ini).
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_messages_sender_user ON messages(sender_user_id);
+
+
+-- Laporan AI harian via WhatsApp (ringkasan leads + estimasi potensi konversi)
+-- dan analisis Hot Leads on-demand — lihat src/ai/leadsAnalyzer.ts & src/scheduler.ts.
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS daily_report_wa_number TEXT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS daily_report_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS daily_report_hour INT NOT NULL DEFAULT 8;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS last_daily_report_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS lead_reports (
+  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id  UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  summary          TEXT NOT NULL,
+  hot_leads        JSONB NOT NULL DEFAULT '[]',
+  warm_leads       JSONB NOT NULL DEFAULT '[]',
+  drop_leads       JSONB NOT NULL DEFAULT '[]',
+  flags            JSONB NOT NULL DEFAULT '[]',
+  estimated_value  BIGINT,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_lead_reports_org ON lead_reports(organization_id, created_at DESC);
