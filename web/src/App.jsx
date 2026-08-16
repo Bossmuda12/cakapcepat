@@ -14,6 +14,7 @@ import Conversations from "./pages/Conversations";
 import Broadcasts from "./pages/Broadcasts";
 import Team from "./pages/Team";
 import Ctwa from "./pages/Ctwa";
+import Leads from "./pages/Leads";
 import Automations from "./pages/Automations";
 import KnowledgeBase from "./pages/KnowledgeBase";
 
@@ -37,6 +38,7 @@ function AppRoutes() {
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/broadcasts" element={<Broadcasts />} />
           <Route path="/ctwa" element={<Ctwa />} />
+          <Route path="/leads" element={<Leads />} />
           <Route path="/automations" element={<Automations />} />
           <Route path="/knowledge-base" element={<KnowledgeBase />} />
           <Route path="/channels" element={<Channels />} />
