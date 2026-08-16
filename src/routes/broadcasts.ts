@@ -54,6 +54,32 @@ broadcastsRouter.post("/broadcasts", requireAuth, async (req: AuthedRequest, res
   }
 });
 
+// Riwayat broadcast — dukung filter tanggal ?from=&to= (dipakai
+// DateRangeFilter di halaman Broadcast).
+broadcastsRouter.get("/broadcasts", requireAuth, async (req: AuthedRequest, res) => {
+  const { from, to } = req.query as { from?: string; to?: string };
+  const params: unknown[] = [req.auth!.organizationId];
+  let dateClause = "";
+  if (from && to) {
+    params.push(from, to);
+    dateClause = "AND b.created_at::date BETWEEN $2 AND $3";
+  }
+  const { rows } = await pool.query(
+    `SELECT b.id, b.name, b.template_name, b.target_label, b.status, b.created_at,
+       wc.label AS channel_label, wc.display_phone_number,
+       (SELECT count(*) FROM broadcast_recipients WHERE broadcast_id = b.id AND status = 'sent') AS sent_count,
+       (SELECT count(*) FROM broadcast_recipients WHERE broadcast_id = b.id AND status = 'failed') AS failed_count,
+       (SELECT count(*) FROM broadcast_recipients WHERE broadcast_id = b.id) AS total_count
+     FROM broadcasts b
+     JOIN whatsapp_channels wc ON wc.id = b.channel_id
+     WHERE wc.organization_id = $1 ${dateClause}
+     ORDER BY b.created_at DESC
+     LIMIT 50`,
+    params
+  );
+  res.json(rows);
+});
+
 broadcastsRouter.get("/broadcasts/:id", requireAuth, async (req: AuthedRequest, res) => {
   const { rows } = await pool.query(
     `SELECT b.*,

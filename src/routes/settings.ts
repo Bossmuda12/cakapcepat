@@ -95,16 +95,23 @@ settingsRouter.put("/settings/ai", requireAuth, async (req: AuthedRequest, res) 
 
 // Log event yang sudah dilaporkan ke Meta CAPI — buat debugging atribusi CTWA.
 settingsRouter.get("/ad-events", requireAuth, async (req: AuthedRequest, res) => {
+  const { from, to } = req.query as { from?: string; to?: string };
+  const params: unknown[] = [req.auth!.organizationId];
+  let dateClause = "";
+  if (from && to) {
+    params.push(from, to);
+    dateClause = "AND ev.created_at::date BETWEEN $2 AND $3";
+  }
   const { rows } = await pool.query(
     `SELECT ev.id, ev.event_name, ev.ctwa_clid, ev.response_status, ev.created_at,
             c.wa_number, c.name AS contact_name
      FROM ad_conversion_events ev
      JOIN conversations conv ON conv.id = ev.conversation_id
      JOIN contacts c ON c.id = conv.contact_id
-     WHERE c.organization_id = $1
+     WHERE c.organization_id = $1 ${dateClause}
      ORDER BY ev.created_at DESC
      LIMIT 100`,
-    [req.auth!.organizationId]
+    params
   );
   res.json(rows);
 });

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import DateRangeFilter from "../components/DateRangeFilter";
+import { defaultRange } from "../dateRangePresets";
 
 export default function Ctwa() {
   const [settings, setSettings] = useState(null);
@@ -9,18 +11,17 @@ export default function Ctwa() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [eventsRange, setEventsRange] = useState(defaultRange());
 
   const load = async () => {
     try {
-      const [s, convos, ev] = await Promise.all([
+      const [s, convos] = await Promise.all([
         api.get("/settings"),
         api.get("/conversations?source=ctwa"),
-        api.get("/ad-events"),
       ]);
       setSettings(s);
       setForm((f) => ({ ...f, pixelId: s.capi.pixelId || "" }));
       setConversations(convos);
-      setEvents(ev);
     } catch (err) {
       setError(err.message);
     }
@@ -29,6 +30,13 @@ export default function Ctwa() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    api
+      .get(`/ad-events?from=${eventsRange.from}&to=${eventsRange.to}`)
+      .then(setEvents)
+      .catch((err) => setError(err.message));
+  }, [eventsRange.from, eventsRange.to]);
 
   const onSave = async (e) => {
     e.preventDefault();
@@ -138,7 +146,10 @@ export default function Ctwa() {
       </div>
 
       <div className="panel">
-        <h2>Log pelaporan ke Meta CAPI</h2>
+        <div className="toolbar" style={{ marginBottom: 14 }}>
+          <h2 style={{ margin: 0 }}>Log pelaporan ke Meta CAPI</h2>
+          <DateRangeFilter value={eventsRange} onChange={setEventsRange} />
+        </div>
         {events === null ? (
           <div className="loading-block">Memuat...</div>
         ) : events.length === 0 ? (

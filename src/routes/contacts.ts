@@ -12,10 +12,17 @@ const createContactSchema = z.object({
 });
 
 contactsRouter.get("/contacts", requireAuth, async (req: AuthedRequest, res) => {
+  const { from, to } = req.query as { from?: string; to?: string };
+  const params: unknown[] = [req.auth!.organizationId];
+  let dateClause = "";
+  if (from && to) {
+    params.push(from, to);
+    dateClause = "AND created_at::date BETWEEN $2 AND $3";
+  }
   const { rows } = await pool.query(
     `SELECT id, wa_number, name, labels, pipeline_stage, created_at
-     FROM contacts WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 100`,
-    [req.auth!.organizationId]
+     FROM contacts WHERE organization_id = $1 ${dateClause} ORDER BY created_at DESC LIMIT 200`,
+    params
   );
   res.json(rows);
 });

@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Modal from "../components/Modal";
 
 export default function Contacts() {
   const [rows, setRows] = useState(null);
   const [form, setForm] = useState({ waNumber: "", name: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showForm, setShowForm] = useState(false);
 
   const load = async () => {
     try {
@@ -27,6 +29,7 @@ export default function Contacts() {
     try {
       await api.post("/contacts", { waNumber: form.waNumber, name: form.name || undefined });
       setForm({ waNumber: "", name: "" });
+      setShowForm(false);
       await load();
     } catch (err) {
       setError(err.message);
@@ -48,31 +51,43 @@ export default function Contacts() {
 
   return (
     <div>
-      <h1>Kontak</h1>
-      <p className="page-subtitle">Daftar lead/pembeli yang pernah dihubungi lewat WhatsApp.</p>
-
-      {error && <div className="error-box">{error}</div>}
-
-      <form className="inline-form" onSubmit={onCreate}>
-        <div className="field">
-          <label>Nomor WhatsApp</label>
-          <input
-            value={form.waNumber}
-            onChange={(e) => setForm((f) => ({ ...f, waNumber: e.target.value }))}
-            placeholder="62812xxxxxxx"
-          />
+      <div className="toolbar">
+        <div>
+          <h1>Kontak</h1>
+          <p className="page-subtitle">Daftar lead/pembeli yang pernah dihubungi lewat WhatsApp.</p>
         </div>
-        <div className="field">
-          <label>Nama (opsional)</label>
-          <input
-            value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-          />
-        </div>
-        <button className="btn" type="submit" disabled={busy}>
-          Tambah
+        <button className="btn" onClick={() => setShowForm(true)}>
+          + Tambah Kontak
         </button>
-      </form>
+      </div>
+
+      {error && !showForm && <div className="error-box">{error}</div>}
+
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Tambah kontak baru">
+        <form onSubmit={onCreate}>
+          {error && <div className="error-box">{error}</div>}
+          <div className="field">
+            <label>Nomor WhatsApp</label>
+            <input
+              value={form.waNumber}
+              onChange={(e) => setForm((f) => ({ ...f, waNumber: e.target.value }))}
+              placeholder="62812xxxxxxx"
+              autoFocus
+              required
+            />
+          </div>
+          <div className="field">
+            <label>Nama (opsional)</label>
+            <input
+              value={form.name}
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            />
+          </div>
+          <button className="btn block" type="submit" disabled={busy}>
+            {busy ? "Menyimpan..." : "Simpan"}
+          </button>
+        </form>
+      </Modal>
 
       <div className="panel">
         {rows === null ? (

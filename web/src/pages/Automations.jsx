@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Modal from "../components/Modal";
 
 const TRIGGER_LABELS = {
   keyword: "Kata kunci",
@@ -135,12 +136,12 @@ export default function Automations() {
           <h1>Otomatisasi</h1>
           <p className="page-subtitle">Auto-reply per nomor WhatsApp: kata kunci, jam kerja, atau fallback ke AI.</p>
         </div>
-        <button className="btn" onClick={() => setShowForm((s) => !s)}>
-          {showForm ? "Batal" : "+ Tambah Aturan"}
+        <button className="btn" onClick={() => setShowForm(true)}>
+          + Tambah Aturan
         </button>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && !showForm && <div className="error-box">{error}</div>}
 
       <form className="panel" onSubmit={onSaveAi}>
         <h2>AI Chatbot (Claude)</h2>
@@ -203,9 +204,9 @@ export default function Automations() {
         </button>
       </form>
 
-      {showForm && (
-        <form className="panel" onSubmit={onCreate}>
-          <h2>Aturan baru</h2>
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Aturan otomatisasi baru" width={560}>
+        <form onSubmit={onCreate}>
+          {error && <div className="error-box">{error}</div>}
           <div className="inline-form">
             <div className="field">
               <label>Nomor WhatsApp</label>
@@ -265,11 +266,11 @@ export default function Automations() {
             </p>
           )}
 
-          <button className="btn" type="submit" disabled={busy} style={{ marginTop: 12 }}>
+          <button className="btn block" type="submit" disabled={busy} style={{ marginTop: 12 }}>
             {busy ? "Menyimpan..." : "Simpan Aturan"}
           </button>
         </form>
-      )}
+      </Modal>
 
       <div className="panel">
         {rows === null ? (

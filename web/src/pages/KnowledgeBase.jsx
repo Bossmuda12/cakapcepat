@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Modal from "../components/Modal";
 
 const emptyForm = { title: "", content: "", productId: "" };
 
@@ -66,42 +67,40 @@ export default function KnowledgeBase() {
             "Fallback ke AI" di halaman Otomatisasi).
           </p>
         </div>
-        <button className="btn" onClick={() => setShowForm((s) => !s)}>
-          {showForm ? "Batal" : "+ Tambah Materi"}
+        <button className="btn" onClick={() => setShowForm(true)}>
+          + Tambah Materi
         </button>
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && !showForm && <div className="error-box">{error}</div>}
 
-      {showForm && (
-        <form className="panel" onSubmit={onCreate}>
-          <h2>Materi baru</h2>
-          <div className="inline-form">
-            <div className="field">
-              <label>Judul</label>
-              <input value={form.title} onChange={update("title")} placeholder="mis. Kebijakan Retur" required />
-            </div>
-            <div className="field">
-              <label>Produk (opsional)</label>
-              <select value={form.productId} onChange={update("productId")}>
-                <option value="">Umum — semua produk</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+      <Modal open={showForm} onClose={() => setShowForm(false)} title="Materi knowledge base baru" width={560}>
+        <form onSubmit={onCreate}>
+          {error && <div className="error-box">{error}</div>}
+          <div className="field">
+            <label>Judul</label>
+            <input value={form.title} onChange={update("title")} placeholder="mis. Kebijakan Retur" required />
+          </div>
+          <div className="field">
+            <label>Produk (opsional)</label>
+            <select value={form.productId} onChange={update("productId")}>
+              <option value="">Umum — semua produk</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
           </div>
           <div className="field">
             <label>Isi</label>
             <textarea rows={5} value={form.content} onChange={update("content")} required />
           </div>
-          <button className="btn" type="submit" disabled={busy}>
+          <button className="btn block" type="submit" disabled={busy}>
             {busy ? "Menyimpan..." : "Simpan"}
           </button>
         </form>
-      )}
+      </Modal>
 
       <div className="panel">
         {rows === null ? (
