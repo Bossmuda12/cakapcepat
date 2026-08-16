@@ -30,6 +30,10 @@ export default function Bootstrap() {
   return (
     <div className="auth-shell">
       <div className="auth-card">
+        <div className="auth-logo">
+          <img src="/logo.png" alt="CakapCepat" />
+          <div className="auth-logo-by">By TahaGroup</div>
+        </div>
         <h1>Setup Awal CakapCepat</h1>
         <p className="subtitle">
           Ini baru pertama kali dijalankan. Buat organization &amp; akun owner kamu.
