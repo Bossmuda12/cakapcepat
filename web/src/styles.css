@@ -106,18 +106,6 @@ a { color: inherit; }
   display: flex;
   flex-direction: column;
 }
-.sidebar .brand {
-  color: #fff;
-  font-weight: 700;
-  font-size: 17px;
-  padding: 0 10px 20px;
-}
-.sidebar .brand small {
-  display: block;
-  font-weight: 400;
-  color: #8b95a5;
-  font-size: 11px;
-}
 .sidebar nav { flex: 1; display: flex; flex-direction: column; gap: 2px; }
 .sidebar nav a {
   display: block;
@@ -363,23 +351,27 @@ tr:last-child td { border-bottom: none; }
   gap: 10px;
   padding: 0 10px 20px;
 }
-.sidebar .brand img {
-  height: 30px;
-  width: 30px;
-  object-fit: contain;
+.brand-logo-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 8px;
+  padding: 4px 8px;
   flex-shrink: 0;
+  line-height: 0;
 }
-.sidebar .brand-text {
-  color: #fff;
-  font-weight: 700;
-  font-size: 16px;
-  line-height: 1.2;
-}
-.sidebar .brand-text small {
+.brand-logo-chip img {
+  height: 22px;
+  width: auto;
+  max-width: 120px;
+  object-fit: contain;
   display: block;
-  font-weight: 400;
+}
+.brand-tagline {
   color: #8b95a5;
-  font-size: 11px;
+  font-weight: 500;
+  font-size: 12px;
 }
 
 /* --- Success message box (dipasangkan dengan .error-box yang sudah ada) --- */
@@ -432,7 +424,16 @@ tr:last-child td { border-bottom: none; }
   font-size: 16px;
   cursor: pointer;
 }
-.topbar-logo { height: 24px; width: auto; object-fit: contain; }
+.topbar-logo-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-radius: 7px;
+  padding: 3px 7px;
+  line-height: 0;
+}
+.topbar-logo { height: 18px; width: auto; max-width: 100px; object-fit: contain; display: block; }
 .sidebar-backdrop {
   display: none;
 }
@@ -486,4 +487,139 @@ tr:last-child td { border-bottom: none; }
   .main h1 { font-size: 17px; }
   .btn { width: 100%; }
   .toolbar { flex-direction: column; align-items: flex-start; gap: 8px; }
+}
+
+/* --- Theme toggle (mode terang/gelap) --- */
+.theme-toggle {
+  margin: 4px 0 14px;
+  background: none;
+  border: 1px solid #333a47;
+  color: #cbd5e1;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+}
+.theme-toggle:hover { border-color: #556; color: #fff; }
+.theme-toggle-mobile {
+  margin-left: auto;
+  background: none;
+  border: 1px solid #333a47;
+  border-radius: 6px;
+  width: 34px;
+  height: 34px;
+  font-size: 15px;
+  cursor: pointer;
+  line-height: 1;
+}
+
+/* --- Dark mode --- */
+[data-theme="dark"] {
+  --bg: #12141a;
+  --panel: #1b1e26;
+  --border: #2b2f3a;
+  --text: #e5e7eb;
+  --text-muted: #9aa3b2;
+  --primary: #22c55e;
+  --primary-dark: #16a34a;
+  --danger: #f87171;
+}
+[data-theme="dark"] body { background: var(--bg); color: var(--text); }
+[data-theme="dark"] .field input,
+[data-theme="dark"] .field select,
+[data-theme="dark"] .field textarea {
+  background: #12141a;
+  color: var(--text);
+  border-color: var(--border);
+}
+[data-theme="dark"] .btn.secondary { background: var(--panel); }
+[data-theme="dark"] .btn.secondary:hover { background: #232733; }
+[data-theme="dark"] td { border-bottom-color: #262b36; }
+[data-theme="dark"] .inbox-messages { background: #14161d; }
+[data-theme="dark"] .bubble.in { background: var(--panel); border-color: var(--border); }
+[data-theme="dark"] .bubble.out { background: #16401f; color: #dcfce7; }
+[data-theme="dark"] .inbox-list-item { border-bottom-color: #262b36; }
+[data-theme="dark"] .inbox-list-item:hover { background: #1f2430; }
+[data-theme="dark"] .inbox-list-item.active { background: #16321f; }
+[data-theme="dark"] .field input:focus,
+[data-theme="dark"] .field select:focus,
+[data-theme="dark"] .field textarea:focus { border-color: var(--primary); }
+[data-theme="dark"] .success-box { background: #10281a; border-color: #1f4a30; color: #86efac; }
+[data-theme="dark"] .error-box { background: #2a1414; border-color: #4a1f1f; color: #fca5a5; }
+[data-theme="dark"] .badge.green { background: #123420; color: #4ade80; }
+[data-theme="dark"] .badge.yellow { background: #3a2f0d; color: #facc15; }
+[data-theme="dark"] .badge.red { background: #3a1717; color: #f87171; }
+[data-theme="dark"] .badge.gray { background: #262b36; color: #9aa3b2; }
+
+/* --- Overview header (judul + jam classic) --- */
+.overview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 22px;
+}
+.overview-header h1 { margin-bottom: 4px; }
+.overview-header .page-subtitle { margin-bottom: 0; }
+
+/* --- Ringkasan inline (dipakai halaman Leads AI) --- */
+.kpi-inline {
+  display: flex;
+  gap: 32px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.kpi-inline-label {
+  display: block;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+.kpi-inline-value {
+  display: block;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* --- Jam classic (dashboard Overview) --- */
+.classic-clock {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  margin-bottom: 0;
+  flex-shrink: 0;
+}
+.classic-clock-face-wrap { width: 84px; height: 84px; flex-shrink: 0; }
+.classic-clock-face-wrap svg { width: 100%; height: 100%; display: block; }
+.clock-rim-outer { fill: var(--panel); stroke: var(--text); stroke-width: 2; }
+.clock-rim-inner { fill: none; stroke: var(--border); stroke-width: 1; }
+.clock-numeral {
+  font-size: 11px;
+  font-family: Georgia, "Times New Roman", serif;
+  fill: var(--text);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.clock-tick-hour { stroke: var(--text); stroke-width: 1.6; }
+.clock-tick-minute { stroke: var(--text-muted); stroke-width: 0.8; }
+.clock-hand-hour { stroke: var(--text); stroke-width: 3.5; stroke-linecap: round; }
+.clock-hand-minute { stroke: var(--text); stroke-width: 2.5; stroke-linecap: round; }
+.clock-hand-second { stroke: var(--primary); stroke-width: 1.2; stroke-linecap: round; }
+.clock-center-pin { fill: var(--primary); }
+.classic-clock-digital { display: flex; flex-direction: column; }
+.classic-clock-time {
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
+.classic-clock-date { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+@media (max-width: 640px) {
+  .overview-header { flex-direction: column; }
+  .classic-clock { width: 100%; }
 }
