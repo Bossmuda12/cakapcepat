@@ -4,6 +4,8 @@ import Layout from "./components/Layout";
 import Login from "./pages/Login";
 import Bootstrap from "./pages/Bootstrap";
 import Overview from "./pages/Overview";
+import Monitor from "./pages/Monitor";
+import Settings from "./pages/Settings";
 import Departments from "./pages/Departments";
 import Products from "./pages/Products";
 import Channels from "./pages/Channels";
@@ -30,6 +32,7 @@ function AppRoutes() {
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Overview />} />
+          <Route path="/monitor" element={<Monitor />} />
           <Route path="/conversations" element={<Conversations />} />
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/broadcasts" element={<Broadcasts />} />
@@ -40,6 +43,7 @@ function AppRoutes() {
           <Route path="/products" element={<Products />} />
           <Route path="/departments" element={<Departments />} />
           <Route path="/team" element={<Team />} />
+          <Route path="/settings" element={<Settings />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
