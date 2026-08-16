@@ -1,12 +1,14 @@
 import "express-async-errors";
 import path from "node:path";
 import fs from "node:fs";
+import http from "node:http";
 import express, { type Request } from "express";
 import cors from "cors";
 import { config } from "./config";
 import { webhookRouter } from "./whatsapp/webhook";
 import { authRouter } from "./routes/auth";
 import { usersRouter } from "./routes/users";
+import { meRouter } from "./routes/me";
 import { departmentsRouter } from "./routes/departments";
 import { productsRouter } from "./routes/products";
 import { channelsRouter } from "./routes/channels";
@@ -16,6 +18,7 @@ import { broadcastsRouter } from "./routes/broadcasts";
 import { settingsRouter } from "./routes/settings";
 import { automationsRouter } from "./routes/automations";
 import { knowledgeBaseRouter } from "./routes/knowledgeBase";
+import { initRealtime } from "./realtime";
 
 const app = express();
 
@@ -36,6 +39,7 @@ app.get("/health", (_req, res) => res.json({ ok: true, service: "cakapcepat" }))
 app.use(webhookRouter);
 app.use("/api", authRouter);
 app.use("/api", usersRouter);
+app.use("/api", meRouter);
 app.use("/api", departmentsRouter);
 app.use("/api", productsRouter);
 app.use("/api", channelsRouter);
@@ -51,7 +55,7 @@ app.use("/api", knowledgeBaseRouter);
 const publicDir = path.join(__dirname, "../public");
 if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir));
-  app.get(/^(?!\/api|\/webhook|\/health).*/, (_req, res) => {
+  app.get(/^(?!\/api|\/webhook|\/health|\/ws).*/, (_req, res) => {
     res.sendFile(path.join(publicDir, "index.html"));
   });
 }
@@ -76,7 +80,11 @@ app.use(
   }
 );
 
-app.listen(config.port, () => {
+const server = http.createServer(app);
+initRealtime(server);
+
+server.listen(config.port, () => {
   console.log(`[server] CakapCepat berjalan di http://localhost:${config.port} (env: ${config.nodeEnv})`);
   console.log(`[server] Webhook URL untuk didaftarkan ke Meta: http://<domain-publik-kamu>/webhook/whatsapp`);
+  console.log(`[server] WebSocket real-time di ws://<domain-publik-kamu>/ws`);
 });
