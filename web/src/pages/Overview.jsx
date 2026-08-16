@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import ClassicClock from "../components/ClassicClock";
 
 export default function Overview() {
   const [stats, setStats] = useState(null);
@@ -38,8 +39,13 @@ export default function Overview() {
 
   return (
     <div>
-      <h1>Overview</h1>
-      <p className="page-subtitle">Ringkasan CakapCepat — data langsung dari database.</p>
+      <div className="overview-header">
+        <div>
+          <h1>Overview</h1>
+          <p className="page-subtitle">Ringkasan CakapCepat — data langsung dari database.</p>
+        </div>
+        <ClassicClock />
+      </div>
 
       {error && <div className="error-box">{error}</div>}
       {!stats && !error && <div className="loading-block">Memuat data...</div>}
