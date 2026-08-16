@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "../api";
+import { useRealtime } from "../useRealtime";
 
 function formatTime(ts) {
   if (!ts) return "";
@@ -46,10 +47,18 @@ export default function Conversations() {
     loadConversations().then((data) => {
       if (data.length > 0 && !selectedId) setSelectedId(data[0].id);
     });
+    // Polling tetap dipertahankan sebagai fallback kalau koneksi WebSocket putus.
     const interval = setInterval(loadConversations, 8000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Push real-time: begitu ada pesan/percakapan baru di server, langsung
+  // refetch daftar percakapan dan (kalau relevan) thread pesan yang lagi dibuka.
+  useRealtime(() => {
+    loadConversations();
+    if (selectedId) loadMessages(selectedId);
+  });
 
   useEffect(() => {
     if (!selectedId) return;
