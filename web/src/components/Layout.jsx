@@ -47,8 +47,20 @@ export default function Layout() {
         <span className="topbar-logo-chip">
           <img src="/logo.png" alt="CakapCepat" className="topbar-logo" />
         </span>
-        <button type="button" className="theme-toggle-mobile" onClick={toggleTheme} aria-label="Ganti tema">
-          {theme === "light" ? "🌙" : "☀️"}
+        <button
+          type="button"
+          className="theme-toggle-mobile"
+          onClick={toggleTheme}
+          aria-label="Ganti tema"
+          aria-pressed={theme === "dark"}
+        >
+          <svg viewBox="0 0 24 24" className="theme-icon theme-icon-sun" aria-hidden="true">
+            <circle cx="12" cy="12" r="4.2" />
+            <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+          </svg>
+          <svg viewBox="0 0 24 24" className="theme-icon theme-icon-moon" aria-hidden="true">
+            <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" />
+          </svg>
         </button>
       </div>
 
@@ -74,8 +86,18 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
-        <button type="button" className="theme-toggle" onClick={toggleTheme}>
-          {theme === "light" ? "Mode Gelap" : "Mode Terang"}
+        <button type="button" className="theme-toggle" onClick={toggleTheme} aria-pressed={theme === "dark"}>
+          <span className="theme-toggle-track">
+            <svg viewBox="0 0 24 24" className="theme-icon theme-icon-sun" aria-hidden="true">
+              <circle cx="12" cy="12" r="4.2" />
+              <path d="M12 3v2M12 19v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M3 12h2M19 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+            </svg>
+            <svg viewBox="0 0 24 24" className="theme-icon theme-icon-moon" aria-hidden="true">
+              <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" />
+            </svg>
+            <span className="theme-toggle-thumb" />
+          </span>
+          <span className="theme-toggle-label">{theme === "light" ? "Mode Gelap" : "Mode Terang"}</span>
         </button>
         <div className="user-box">
           <div className="name">{user?.name || user?.email}</div>

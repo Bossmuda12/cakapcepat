@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import ClassicClock from "../components/ClassicClock";
+import ModernClock from "../components/ModernClock";
 
 export default function Overview() {
   const [stats, setStats] = useState(null);
@@ -44,7 +44,7 @@ export default function Overview() {
           <h1>Overview</h1>
           <p className="page-subtitle">Ringkasan CakapCepat — data langsung dari database.</p>
         </div>
-        <ClassicClock />
+        <ModernClock />
       </div>
 
       {error && <div className="error-box">{error}</div>}
