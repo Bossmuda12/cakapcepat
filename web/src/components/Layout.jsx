@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 
 const NAV_ITEMS = [
   { to: "/", label: "Overview", end: true },
   { to: "/monitor", label: "Monitor Chat" },
+  { to: "/leads", label: "Leads AI" },
   { to: "/conversations", label: "Percakapan" },
   { to: "/contacts", label: "Kontak" },
   { to: "/broadcasts", label: "Broadcast" },
@@ -18,9 +19,19 @@ const NAV_ITEMS = [
   { to: "/settings", label: "Pengaturan" },
 ];
 
+const THEME_KEY = "cakapcepat_theme";
+
 export default function Layout() {
   const { user, logout } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [theme, setTheme] = useState(() => localStorage.getItem(THEME_KEY) || "light");
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem(THEME_KEY, theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => (t === "light" ? "dark" : "light"));
 
   return (
     <div className="app-shell">
@@ -33,18 +44,22 @@ export default function Layout() {
         >
           &#9776;
         </button>
-        <img src="/logo.png" alt="CakapCepat" className="topbar-logo" />
+        <span className="topbar-logo-chip">
+          <img src="/logo.png" alt="CakapCepat" className="topbar-logo" />
+        </span>
+        <button type="button" className="theme-toggle-mobile" onClick={toggleTheme} aria-label="Ganti tema">
+          {theme === "light" ? "🌙" : "☀️"}
+        </button>
       </div>
 
       {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
 
       <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand">
-          <img src="/logo.png" alt="CakapCepat" />
-          <div className="brand-text">
-            CakapCepat
-            <small>By TahaGroup</small>
-          </div>
+          <span className="brand-logo-chip">
+            <img src="/logo.png" alt="CakapCepat" />
+          </span>
+          <span className="brand-tagline">By TahaGroup</span>
         </div>
         <nav>
           {NAV_ITEMS.map((item) => (
@@ -59,6 +74,9 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+        <button type="button" className="theme-toggle" onClick={toggleTheme}>
+          {theme === "light" ? "Mode Gelap" : "Mode Terang"}
+        </button>
         <div className="user-box">
           <div className="name">{user?.name || user?.email}</div>
           <div>{user?.role}</div>
