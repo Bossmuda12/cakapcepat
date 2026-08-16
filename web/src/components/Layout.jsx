@@ -1,8 +1,10 @@
+import { useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 
 const NAV_ITEMS = [
   { to: "/", label: "Overview", end: true },
+  { to: "/monitor", label: "Monitor Chat" },
   { to: "/conversations", label: "Percakapan" },
   { to: "/contacts", label: "Kontak" },
   { to: "/broadcasts", label: "Broadcast" },
@@ -13,17 +15,36 @@ const NAV_ITEMS = [
   { to: "/products", label: "Produk" },
   { to: "/departments", label: "Departemen" },
   { to: "/team", label: "Tim" },
+  { to: "/settings", label: "Pengaturan" },
 ];
 
 export default function Layout() {
   const { user, logout } = useAuth();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
+      <div className="topbar-mobile">
+        <button
+          type="button"
+          className="menu-toggle"
+          aria-label="Buka menu"
+          onClick={() => setSidebarOpen((v) => !v)}
+        >
+          &#9776;
+        </button>
+        <img src="/logo.png" alt="CakapCepat" className="topbar-logo" />
+      </div>
+
+      {sidebarOpen && <div className="sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
+
+      <aside className={`sidebar ${sidebarOpen ? "open" : ""}`}>
         <div className="brand">
-          CakapCepat
-          <small>by TahaGroup</small>
+          <img src="/logo.png" alt="CakapCepat" />
+          <div className="brand-text">
+            CakapCepat
+            <small>By TahaGroup</small>
+          </div>
         </div>
         <nav>
           {NAV_ITEMS.map((item) => (
@@ -31,6 +52,7 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               end={item.end}
+              onClick={() => setSidebarOpen(false)}
               className={({ isActive }) => (isActive ? "active" : "")}
             >
               {item.label}
