@@ -4,6 +4,46 @@ import { useAuth } from "../AuthContext";
 
 const emptyForm = { name: "", email: "", password: "", role: "agent" };
 
+const ROLE_LABELS = { owner: "Owner", admin: "Admin", agent: "Agent (CS)" };
+
+const AVATAR_COLORS = ["#2563eb", "#7c3aed", "#0891b2", "#16a34a", "#d97706", "#db2777", "#4f46e5"];
+
+function colorForName(name) {
+  const str = name || "?";
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function initialsForName(name) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase();
+}
+
+const RING_RADIUS = 26;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
+
+function PerformanceRing({ percent }) {
+  const offset = RING_CIRCUMFERENCE * (1 - percent / 100);
+  return (
+    <div className="team-ring-wrap">
+      <svg viewBox="0 0 64 64" className="team-ring">
+        <circle cx="32" cy="32" r={RING_RADIUS} className="team-ring-track" />
+        <circle
+          cx="32"
+          cy="32"
+          r={RING_RADIUS}
+          className="team-ring-progress"
+          strokeDasharray={RING_CIRCUMFERENCE}
+          strokeDashoffset={offset}
+        />
+      </svg>
+      <div className="team-ring-label">{percent}%</div>
+    </div>
+  );
+}
+
 export default function Team() {
   const { user } = useAuth();
   const [rows, setRows] = useState(null);
@@ -16,7 +56,7 @@ export default function Team() {
 
   const load = async () => {
     try {
-      setRows(await api.get("/users"));
+      setRows(await api.get("/team/performance"));
     } catch (err) {
       setError(err.message);
     }
@@ -49,7 +89,7 @@ export default function Team() {
       <div className="toolbar">
         <div>
           <h1>Tim</h1>
-          <p className="page-subtitle">Anggota tim yang bisa masuk ke CakapCepat.</p>
+          <p className="page-subtitle">Performa harian tiap anggota tim CakapCepat.</p>
         </div>
         {canManage && (
           <button className="btn" onClick={() => setShowForm((s) => !s)}>
@@ -99,32 +139,48 @@ export default function Team() {
         </form>
       )}
 
-      <div className="panel">
-        {rows === null ? (
-          <div className="loading-block">Memuat...</div>
-        ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Nama</th>
-                <th>Email</th>
-                <th>Peran</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id}>
-                  <td>{r.name || "—"}</td>
-                  <td>{r.email}</td>
-                  <td>
-                    <span className="badge">{r.role}</span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {rows === null ? (
+        <div className="loading-block">Memuat...</div>
+      ) : rows.length === 0 ? (
+        <div className="panel">Belum ada anggota tim.</div>
+      ) : (
+        <div className="team-grid">
+          {rows.map((r) => (
+            <div className="team-card panel" key={r.id}>
+              <div className="team-card-top">
+                <div className="team-avatar" style={{ background: colorForName(r.name) }}>
+                  {initialsForName(r.name)}
+                  <span
+                    className={`team-status-dot ${r.isActiveToday ? "active" : "inactive"}`}
+                    title={r.isActiveToday ? "Aktif hari ini" : "Belum ada aktivitas hari ini"}
+                  />
+                </div>
+                <PerformanceRing percent={r.performancePercent} />
+              </div>
+              <div className="team-card-name">{r.name || "—"}</div>
+              <div className="team-card-email">{r.email}</div>
+              <div className="team-tags">
+                <span className="badge">{ROLE_LABELS[r.role] || r.role}</span>
+                {r.departments.map((d) => (
+                  <span className="badge gray" key={d}>
+                    {d}
+                  </span>
+                ))}
+              </div>
+              <div className="team-card-stats">
+                <div>
+                  <div className="team-stat-value">{r.messagesToday}</div>
+                  <div className="team-stat-label">Pesan hari ini</div>
+                </div>
+                <div>
+                  <div className="team-stat-value">{r.openConversations}</div>
+                  <div className="team-stat-label">Percakapan terbuka</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

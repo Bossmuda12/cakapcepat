@@ -33,9 +33,11 @@ usersRouter.post("/users", requireAuth, async (req: AuthedRequest, res) => {
   const { name, email, password, role } = parsed.data;
 
   const passwordHash = await bcrypt.hash(password, 10);
+  // Ditambahkan langsung oleh owner/admin yang sudah login — jadi otomatis
+  // email_verified (nggak perlu alur verifikasi email seperti Register mandiri).
   const { rows } = await pool.query(
-    `INSERT INTO users (organization_id, email, name, password_hash, role)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO users (organization_id, email, name, password_hash, role, email_verified)
+     VALUES ($1, $2, $3, $4, $5, true)
      RETURNING id, name, email, role, created_at`,
     [req.auth!.organizationId, email.toLowerCase(), name, passwordHash, role]
   );

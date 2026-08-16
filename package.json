@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:web": "vite",
-    "build": "tsc -p tsconfig.json && vite build",
+    "build": "tsc -p tsconfig.json && cp src/db/schema.sql dist/db/schema.sql && vite build",
     "start": "node dist/db/migrate.js && node dist/server.js",
     "db:migrate": "tsx src/db/migrate.ts",
     "worker": "tsx watch src/queue/broadcastWorker.ts",
