@@ -14,7 +14,8 @@ function maskToken(token: string | null): string | null {
 
 settingsRouter.get("/settings", requireAuth, async (req: AuthedRequest, res) => {
   const { rows } = await pool.query(
-    `SELECT name, capi_pixel_id, capi_access_token, ai_api_key, ai_model, ai_system_prompt
+    `SELECT name, capi_pixel_id, capi_access_token, ai_api_key, ai_model, ai_system_prompt,
+            daily_report_wa_number, daily_report_enabled, daily_report_hour, last_daily_report_at
      FROM organization WHERE id = $1`,
     [req.auth!.organizationId]
   );
@@ -31,6 +32,12 @@ settingsRouter.get("/settings", requireAuth, async (req: AuthedRequest, res) => 
       model: org?.ai_model || config.ai.model,
       systemPrompt: org?.ai_system_prompt || null,
       configured: Boolean(org?.ai_api_key || config.ai.apiKey),
+    },
+    dailyReport: {
+      waNumber: org?.daily_report_wa_number ?? null,
+      enabled: org?.daily_report_enabled ?? false,
+      hour: org?.daily_report_hour ?? 8,
+      lastSentAt: org?.last_daily_report_at ?? null,
     },
   });
 });
@@ -100,4 +107,33 @@ settingsRouter.get("/ad-events", requireAuth, async (req: AuthedRequest, res) =>
     [req.auth!.organizationId]
   );
   res.json(rows);
+});
+
+const dailyReportSchema = z.object({
+  waNumber: z.string().min(6).max(20).optional().nullable(),
+  enabled: z.boolean().optional(),
+  hour: z.number().int().min(0).max(23).optional(),
+});
+
+settingsRouter.put("/settings/daily-report", requireAuth, async (req: AuthedRequest, res) => {
+  if (req.auth!.role !== "owner" && req.auth!.role !== "admin") {
+    return res.status(403).json({ error: "Hanya owner/admin yang bisa mengubah pengaturan ini" });
+  }
+  const parsed = dailyReportSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  await pool.query(
+    `UPDATE organization SET
+       daily_report_wa_number = COALESCE($2, daily_report_wa_number),
+       daily_report_enabled = COALESCE($3, daily_report_enabled),
+       daily_report_hour = COALESCE($4, daily_report_hour)
+     WHERE id = $1`,
+    [
+      req.auth!.organizationId,
+      parsed.data.waNumber ?? null,
+      parsed.data.enabled ?? null,
+      parsed.data.hour ?? null,
+    ]
+  );
+  res.json({ ok: true });
 });
