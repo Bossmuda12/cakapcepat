@@ -4,6 +4,7 @@ import { pool } from "../db/pool";
 import { requireAuth, type AuthedRequest } from "../middleware/auth";
 import { reportConversionToMeta } from "../whatsapp/capi";
 import { sendTextMessage } from "../whatsapp/client";
+import { broadcastToOrg } from "../realtime";
 
 export const conversationsRouter = Router();
 
@@ -13,15 +14,90 @@ conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest
   const { rows } = await pool.query(
     `SELECT conv.id, conv.status, conv.assigned_to, conv.ctwa_clid, conv.ad_source_url,
             conv.conversion_reported, conv.last_message_at, conv.channel_id,
-            c.wa_number, c.name AS contact_name, c.pipeline_stage
+            c.wa_number, c.name AS contact_name, c.pipeline_stage,
+            u.name AS assigned_name
      FROM conversations conv
      JOIN contacts c ON c.id = conv.contact_id
+     LEFT JOIN users u ON u.id = conv.assigned_to
      WHERE c.organization_id = $1 ${ctwaOnly ? "AND conv.ctwa_clid IS NOT NULL" : ""}
      ORDER BY conv.last_message_at DESC NULLS LAST
      LIMIT 200`,
     [req.auth!.organizationId]
   );
   res.json(rows);
+});
+
+/**
+ * Ringkasan performa CS untuk halaman Monitor: jumlah percakapan terbuka,
+ * pesan hari ini, dan breakdown per anggota tim (chat yang di-assign ke dia,
+ * berapa pesan yang dia kirim hari ini). Dipakai bersama polling ringan +
+ * sinyal WebSocket supaya datanya terasa real-time tanpa nge-refresh manual.
+ */
+conversationsRouter.get("/conversations/stats", requireAuth, async (req: AuthedRequest, res) => {
+  const orgId = req.auth!.organizationId;
+
+  const { rows: totals } = await pool.query(
+    `SELECT
+       count(*) FILTER (WHERE conv.status = 'open') AS open_conversations,
+       count(*) FILTER (WHERE conv.status = 'pending') AS pending_conversations
+     FROM conversations conv
+     JOIN contacts c ON c.id = conv.contact_id
+     WHERE c.organization_id = $1`,
+    [orgId]
+  );
+
+  const { rows: messagesToday } = await pool.query(
+    `SELECT count(*) AS count
+     FROM messages m
+     JOIN conversations conv ON conv.id = m.conversation_id
+     JOIN contacts c ON c.id = conv.contact_id
+     WHERE c.organization_id = $1 AND m.created_at >= date_trunc('day', now())`,
+    [orgId]
+  );
+
+  const { rows: closingTotal } = await pool.query(
+    `SELECT count(*) AS count FROM contacts WHERE organization_id = $1 AND pipeline_stage = 'closing_won'`,
+    [orgId]
+  );
+
+  // Dua subquery ter-agregasi digabung lewat LEFT JOIN (bukan JOIN langsung ke
+  // conversations & messages sekaligus) supaya tidak terjadi fan-out/duplikasi
+  // hitungan akibat cross product antar baris conversations dan messages.
+  const { rows: perAgent } = await pool.query(
+    `SELECT u.id, u.name, u.email,
+            COALESCE(oc.cnt, 0) AS open_conversations,
+            COALESCE(mt.cnt, 0) AS messages_today
+     FROM users u
+     LEFT JOIN (
+       SELECT assigned_to, count(*) AS cnt
+       FROM conversations
+       WHERE status = 'open' AND assigned_to IS NOT NULL
+       GROUP BY assigned_to
+     ) oc ON oc.assigned_to = u.id
+     LEFT JOIN (
+       SELECT sender_user_id, count(*) AS cnt
+       FROM messages
+       WHERE sender_user_id IS NOT NULL AND created_at >= date_trunc('day', now())
+       GROUP BY sender_user_id
+     ) mt ON mt.sender_user_id = u.id
+     WHERE u.organization_id = $1
+     ORDER BY u.name`,
+    [orgId]
+  );
+
+  res.json({
+    openConversations: Number(totals[0].open_conversations),
+    pendingConversations: Number(totals[0].pending_conversations),
+    messagesToday: Number(messagesToday[0].count),
+    closingWonTotal: Number(closingTotal[0].count),
+    agents: perAgent.map((r) => ({
+      id: r.id,
+      name: r.name,
+      email: r.email,
+      openConversations: Number(r.open_conversations),
+      messagesToday: Number(r.messages_today),
+    })),
+  });
 });
 
 conversationsRouter.get("/conversations/:id/messages", requireAuth, async (req: AuthedRequest, res) => {
@@ -70,12 +146,13 @@ conversationsRouter.post("/conversations/:id/messages", requireAuth, async (req:
     const waMessageId = waRes?.messages?.[0]?.id ?? null;
 
     const { rows: msgRows } = await pool.query(
-      `INSERT INTO messages (conversation_id, direction, sender_type, wa_message_id, content_type, content, status)
-       VALUES ($1, 'outbound', 'human', $2, 'text', $3, 'sent')
+      `INSERT INTO messages (conversation_id, direction, sender_type, sender_user_id, wa_message_id, content_type, content, status)
+       VALUES ($1, 'outbound', 'human', $2, $3, 'text', $4, 'sent')
        RETURNING id, direction, sender_type, content_type, content, status, created_at`,
-      [req.params.id, waMessageId, JSON.stringify({ body: parsed.data.body })]
+      [req.params.id, req.auth!.userId, waMessageId, JSON.stringify({ body: parsed.data.body })]
     );
     await pool.query("UPDATE conversations SET last_message_at = now() WHERE id = $1", [req.params.id]);
+    broadcastToOrg(req.auth!.organizationId, { type: "message", conversationId: req.params.id });
     res.status(201).json(msgRows[0]);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Gagal mengirim pesan";
@@ -93,6 +170,7 @@ conversationsRouter.post("/conversations/:id/assign", requireAuth, async (req: A
     parsed.data.userId,
     req.params.id,
   ]);
+  broadcastToOrg(req.auth!.organizationId, { type: "assign", conversationId: req.params.id });
   res.json({ ok: true });
 });
 
@@ -134,5 +212,6 @@ conversationsRouter.post("/conversations/:id/pipeline", requireAuth, async (req:
     }
   }
 
+  broadcastToOrg(req.auth!.organizationId, { type: "pipeline", conversationId });
   res.json({ ok: true, capiReported: Boolean(capiResult) });
 });
