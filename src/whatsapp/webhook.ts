@@ -4,6 +4,7 @@ import { config } from "../config";
 import { pool } from "../db/pool";
 import { maybeGenerateAiReply } from "../ai/chatbot";
 import { sendTextMessage } from "./client";
+import { broadcastToOrg } from "../realtime";
 
 export const webhookRouter = Router();
 
@@ -145,6 +146,10 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
     [conversationId, msg.id, JSON.stringify({ body: textBody })]
   );
 
+  // Sinyal real-time ke dashboard (halaman Percakapan & Monitor) — pemanggil
+  // cukup refetch data terkini saat menerima event ini, lihat web/src/useRealtime.js.
+  broadcastToOrg(organizationId, { type: "message", conversationId });
+
   await maybeAutoReply({
     organizationId,
     conversationId,
@@ -189,6 +194,7 @@ async function maybeAutoReply(params: AutoReplyParams) {
        VALUES ($1, 'outbound', $2, 'text', $3, 'sent')`,
       [conversationId, senderType, JSON.stringify({ body: replyText })]
     );
+    broadcastToOrg(organizationId, { type: "message", conversationId });
   };
 
   const activeKeywordRules = automations.filter((a) => a.trigger_type === "keyword" && a.is_active);
