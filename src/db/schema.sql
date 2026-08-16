@@ -210,3 +210,16 @@ CREATE TABLE IF NOT EXISTS lead_reports (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_lead_reports_org ON lead_reports(organization_id, created_at DESC);
+
+-- Registrasi mandiri (Register), verifikasi email, dan lupa password —
+-- dikirim via Gmail SMTP (lihat src/email.ts). Setiap registrasi baru
+-- membuat organization sendiri (multi-tenant, produk ini bisa dipakai/
+-- dijual ke siapa pun, bukan cuma TahaGroup).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token_expires TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(verification_token);
+CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token);

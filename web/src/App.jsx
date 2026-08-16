@@ -2,6 +2,10 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "./AuthContext";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
+import Register from "./pages/Register";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
+import VerifyEmail from "./pages/VerifyEmail";
 import Bootstrap from "./pages/Bootstrap";
 import Overview from "./pages/Overview";
 import Monitor from "./pages/Monitor";
@@ -29,27 +33,41 @@ function Gate({ children }) {
 
 function AppRoutes() {
   return (
-    <Gate>
-      <Routes>
-        <Route element={<Layout />}>
-          <Route path="/" element={<Overview />} />
-          <Route path="/monitor" element={<Monitor />} />
-          <Route path="/conversations" element={<Conversations />} />
-          <Route path="/contacts" element={<Contacts />} />
-          <Route path="/broadcasts" element={<Broadcasts />} />
-          <Route path="/ctwa" element={<Ctwa />} />
-          <Route path="/leads" element={<Leads />} />
-          <Route path="/automations" element={<Automations />} />
-          <Route path="/knowledge-base" element={<KnowledgeBase />} />
-          <Route path="/channels" element={<Channels />} />
-          <Route path="/products" element={<Products />} />
-          <Route path="/departments" element={<Departments />} />
-          <Route path="/team" element={<Team />} />
-          <Route path="/settings" element={<Settings />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </Gate>
+    <Routes>
+      {/* Halaman publik — bisa diakses tanpa login */}
+      <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+
+      {/* Semua rute lain butuh sesi (atau nampilin Login/Bootstrap kalau belum) */}
+      <Route
+        path="/*"
+        element={
+          <Gate>
+            <Routes>
+              <Route element={<Layout />}>
+                <Route path="/" element={<Overview />} />
+                <Route path="/monitor" element={<Monitor />} />
+                <Route path="/conversations" element={<Conversations />} />
+                <Route path="/contacts" element={<Contacts />} />
+                <Route path="/broadcasts" element={<Broadcasts />} />
+                <Route path="/ctwa" element={<Ctwa />} />
+                <Route path="/leads" element={<Leads />} />
+                <Route path="/automations" element={<Automations />} />
+                <Route path="/knowledge-base" element={<KnowledgeBase />} />
+                <Route path="/channels" element={<Channels />} />
+                <Route path="/products" element={<Products />} />
+                <Route path="/departments" element={<Departments />} />
+                <Route path="/team" element={<Team />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
+              </Route>
+            </Routes>
+          </Gate>
+        }
+      />
+    </Routes>
   );
 }
 

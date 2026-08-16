@@ -36,4 +36,18 @@ export const config = {
   },
 
   broadcastRatePerMinute: Number(process.env.BROADCAST_RATE_PER_MINUTE ?? 60),
+
+  // URL publik dashboard — dipakai untuk bikin link verifikasi email &
+  // reset password di dalam isi email. Set APP_URL di Railway ke domain asli.
+  appUrl: process.env.APP_URL ?? "http://localhost:5173",
+
+  // Pengiriman email (verifikasi akun & lupa password) lewat Gmail SMTP +
+  // App Password (myaccount.google.com/apppasswords). Kalau kosong, email
+  // tidak akan terkirim — dicatat di log server saja (supaya dev/testing
+  // nggak nge-block tanpa kredensial ini).
+  email: {
+    gmailUser: process.env.GMAIL_USER ?? "",
+    gmailAppPassword: process.env.GMAIL_APP_PASSWORD ?? "",
+    fromName: process.env.EMAIL_FROM_NAME ?? "CakapCepat",
+  },
 };
