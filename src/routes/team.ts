@@ -39,14 +39,14 @@ teamRouter.get("/team/performance", requireAuth, async (req: AuthedRequest, res)
 
   const { rows: statRows } = await pool.query(
     `SELECT
-       sender_user_id AS user_id,
-       COUNT(*) FILTER (WHERE created_at::date = CURRENT_DATE) AS messages_today,
-       MAX(created_at) AS last_active_at
+       m.sender_user_id AS user_id,
+       COUNT(*) FILTER (WHERE m.created_at::date = CURRENT_DATE) AS messages_today,
+       MAX(m.created_at) AS last_active_at
      FROM messages m
      JOIN conversations c ON c.id = m.conversation_id
      JOIN whatsapp_channels wc ON wc.id = c.channel_id
      WHERE wc.organization_id = $1 AND m.sender_user_id IS NOT NULL AND m.direction = 'outbound'
-     GROUP BY sender_user_id`,
+     GROUP BY m.sender_user_id`,
     [organizationId]
   );
   const statByUser = new Map<string, { messagesToday: number; lastActiveAt: string | null }>();
