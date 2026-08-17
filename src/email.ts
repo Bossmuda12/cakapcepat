@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import type SMTPTransport from "nodemailer/lib/smtp-transport";
 import { config } from "./config";
 
 // Transport Gmail SMTP + App Password. Dibuat lazy (bukan langsung saat
@@ -6,13 +7,23 @@ import { config } from "./config";
 // baru dicek pas benar-benar mau kirim email.
 function getTransport() {
   if (!config.email.gmailUser || !config.email.gmailAppPassword) return null;
-  return nodemailer.createTransport({
-    service: "gmail",
+  const options = {
+    host: "smtp.gmail.com",
+    port: 465,
+    secure: true,
+    // Banyak host cloud (termasuk Railway) punya rute IPv6 yang rusak ke
+    // Gmail, sehingga koneksi menggantung sampai timeout walau kredensial
+    // benar. Paksa IPv4 (family: 4) supaya konek langsung jalan.
+    family: 4,
+    connectionTimeout: 15000,
+    greetingTimeout: 15000,
+    socketTimeout: 15000,
     auth: {
       user: config.email.gmailUser,
       pass: config.email.gmailAppPassword,
     },
-  });
+  };
+  return nodemailer.createTransport(options as SMTPTransport.Options);
 }
 
 async function send(to: string, subject: string, html: string): Promise<boolean> {
