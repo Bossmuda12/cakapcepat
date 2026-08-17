@@ -305,3 +305,163 @@ authRouter.get("/auth/me", requireAuth, async (req: AuthedRequest, res) => {
   if (!rows[0]) return res.status(404).json({ error: "User tidak ditemukan" });
   res.json(rows[0]);
 });
+
+/**
+ * Dipakai frontend (Login/Register) buat tahu tombol Google/Facebook harus
+ * aktif atau tetap "Segera" — tergantung apakah kredensial OAuth sudah
+ * diisi di server. Tidak butuh login.
+ */
+authRouter.get("/auth/oauth-config", async (_req, res) => {
+  res.json({
+    google: Boolean(config.oauth.google.clientId && config.oauth.google.clientSecret),
+    facebook: Boolean(config.oauth.facebook.clientId && config.oauth.facebook.clientSecret),
+  });
+});
+
+const GOOGLE_REDIRECT_URI = () => `${config.appUrl}/api/auth/google/callback`;
+
+/**
+ * Klik "Google" di halaman login/register -> redirect ke sini -> redirect
+ * lagi ke halaman consent Google. `state` di-signed pakai JWT_SECRET (bukan
+ * disimpan di session/cookie — server ini stateless) supaya callback bisa
+ * memverifikasi request ini memang berasal dari server kita sendiri (anti
+ * CSRF), tanpa perlu tabel/session tambahan.
+ */
+authRouter.get("/auth/google", (_req, res) => {
+  if (!config.oauth.google.clientId) {
+    return res.status(503).send("Login dengan Google belum dikonfigurasi di server ini.");
+  }
+  const state = jwt.sign({ purpose: "google-oauth" }, config.jwtSecret, { expiresIn: "10m" });
+  const url = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+  url.searchParams.set("client_id", config.oauth.google.clientId);
+  url.searchParams.set("redirect_uri", GOOGLE_REDIRECT_URI());
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "openid email profile");
+  url.searchParams.set("state", state);
+  url.searchParams.set("prompt", "select_account");
+  res.redirect(url.toString());
+});
+
+/**
+ * Callback dari Google setelah user setuju/menolak consent. Tukar `code`
+ * jadi access token, ambil profil (email, nama), lalu:
+ *   - kalau email sudah ada di DB  -> login akun itu, dan link google_id
+ *     kalau belum ter-link (misal user awalnya daftar manual)
+ *   - kalau belum ada              -> bikin organization + user baru
+ *     (multi-tenant, sama seperti /auth/register), email_verified=true
+ *     langsung karena Google sudah memverifikasi kepemilikan email itu.
+ * Hasil akhir: redirect ke frontend /oauth-callback?token=... supaya
+ * frontend yang simpan token ke localStorage (backend tidak pegang cookie
+ * session di app ini).
+ */
+authRouter.get("/auth/google/callback", async (req, res) => {
+  const code = String(req.query.code || "");
+  const state = String(req.query.state || "");
+  const oauthError = String(req.query.error || "");
+
+  const failRedirect = (message: string) =>
+    res.redirect(`${config.appUrl}/?oauthError=${encodeURIComponent(message)}`);
+
+  if (oauthError) return failRedirect("Login dengan Google dibatalkan.");
+  if (!code) return failRedirect("Kode otorisasi dari Google tidak ada.");
+
+  try {
+    jwt.verify(state, config.jwtSecret);
+  } catch {
+    return failRedirect("Sesi login Google tidak valid atau sudah kedaluwarsa. Coba lagi.");
+  }
+
+  if (!config.oauth.google.clientId || !config.oauth.google.clientSecret) {
+    return failRedirect("Login dengan Google belum dikonfigurasi di server ini.");
+  }
+
+  try {
+    const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code,
+        client_id: config.oauth.google.clientId,
+        client_secret: config.oauth.google.clientSecret,
+        redirect_uri: GOOGLE_REDIRECT_URI(),
+        grant_type: "authorization_code",
+      }),
+    });
+    if (!tokenRes.ok) {
+      const body = await tokenRes.text().catch(() => "");
+      console.error(`[oauth] Google token exchange gagal: HTTP ${tokenRes.status} — ${body}`);
+      return failRedirect("Gagal masuk dengan Google. Coba lagi.");
+    }
+    const tokenData = (await tokenRes.json()) as { access_token: string };
+
+    const profileRes = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${tokenData.access_token}` },
+    });
+    if (!profileRes.ok) return failRedirect("Gagal mengambil profil Google kamu.");
+    const profile = (await profileRes.json()) as {
+      sub: string;
+      email?: string;
+      email_verified?: boolean;
+      name?: string;
+    };
+
+    if (!profile.email) return failRedirect("Akun Google kamu tidak punya email publik.");
+    const normalizedEmail = profile.email.toLowerCase();
+    const name = profile.name || normalizedEmail.split("@")[0];
+
+    const { rows: existing } = await pool.query(
+      "SELECT id, organization_id, role, google_id FROM users WHERE email = $1",
+      [normalizedEmail]
+    );
+
+    let userId: string;
+    let organizationId: string;
+    let role: string;
+
+    if (existing[0]) {
+      userId = existing[0].id;
+      organizationId = existing[0].organization_id;
+      role = existing[0].role;
+      if (!existing[0].google_id) {
+        await pool.query(
+          "UPDATE users SET google_id = $1, email_verified = true WHERE id = $2",
+          [profile.sub, userId]
+        );
+      }
+    } else {
+      const randomPassword = crypto.randomBytes(24).toString("hex");
+      const passwordHash = await bcrypt.hash(randomPassword, 10);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const { rows: orgRows } = await client.query(
+          "INSERT INTO organization (name) VALUES ($1) RETURNING id",
+          [`Organisasi ${name}`]
+        );
+        organizationId = orgRows[0].id;
+        const { rows: userRows } = await client.query(
+          `INSERT INTO users
+             (organization_id, email, name, password_hash, role, email_verified, google_id)
+           VALUES ($1, $2, $3, $4, 'owner', true, $5) RETURNING id`,
+          [organizationId, normalizedEmail, name, passwordHash, profile.sub]
+        );
+        await client.query("COMMIT");
+        userId = userRows[0].id;
+        role = "owner";
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    const token = jwt.sign({ userId, organizationId, role }, config.jwtSecret, {
+      expiresIn: "30d",
+    });
+    res.redirect(`${config.appUrl}/oauth-callback?token=${token}`);
+  } catch (err) {
+    console.error("[oauth] Google login gagal:", err);
+    return failRedirect("Terjadi kesalahan saat masuk dengan Google.");
+  }
+});

@@ -844,10 +844,19 @@ tr:last-child td { border-bottom: none; }
   font-size: 13px;
   font-weight: 600;
   color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.oauth-btn:hover { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.oauth-btn:disabled,
+.oauth-btn[disabled] {
   cursor: not-allowed;
   opacity: 0.55;
-  position: relative;
 }
+.oauth-btn:disabled:hover,
+.oauth-btn[disabled]:hover { border-color: var(--border); box-shadow: none; }
 .oauth-btn svg { width: 18px; height: 18px; flex-shrink: 0; }
 .oauth-btn .oauth-soon {
   margin-left: 6px;

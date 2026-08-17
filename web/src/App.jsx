@@ -6,6 +6,7 @@ import Register from "./pages/Register";
 import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import VerifyEmail from "./pages/VerifyEmail";
+import OAuthCallback from "./pages/OAuthCallback";
 import Bootstrap from "./pages/Bootstrap";
 import Overview from "./pages/Overview";
 import Monitor from "./pages/Monitor";
@@ -39,6 +40,7 @@ function AppRoutes() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/oauth-callback" element={<OAuthCallback />} />
 
       {/* Semua rute lain butuh sesi (atau nampilin Login/Bootstrap kalau belum) */}
       <Route

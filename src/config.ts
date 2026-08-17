@@ -56,4 +56,18 @@ export const config = {
     fromAddress: process.env.EMAIL_FROM_ADDRESS ?? "onboarding@resend.dev",
     fromName: process.env.EMAIL_FROM_NAME ?? "CakapCepat",
   },
+
+  // Login sosial. Dibuat di console.cloud.google.com (Google Auth Platform)
+  // / developers.facebook.com. Kalau kosong, tombol di halaman login akan
+  // tetap tampil "Segera" (nonaktif) — tidak crash.
+  oauth: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+    },
+    facebook: {
+      clientId: process.env.FACEBOOK_CLIENT_ID ?? "",
+      clientSecret: process.env.FACEBOOK_CLIENT_SECRET ?? "",
+    },
+  },
 };

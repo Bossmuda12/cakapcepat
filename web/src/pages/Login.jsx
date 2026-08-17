@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link } from "react-router-dom";
+import { useState, useEffect } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { api } from "../api";
 
@@ -39,13 +39,22 @@ function FacebookIcon() {
 
 export default function Login() {
   const { login } = useAuth();
+  const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(searchParams.get("oauthError") || "");
   const [needsVerification, setNeedsVerification] = useState(false);
   const [resendMessage, setResendMessage] = useState("");
   const [resending, setResending] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [oauthConfig, setOauthConfig] = useState({ google: false, facebook: false });
+
+  useEffect(() => {
+    api
+      .get("/auth/oauth-config")
+      .then(setOauthConfig)
+      .catch(() => {});
+  }, []);
 
   const onSubmit = async (e) => {
     e.preventDefault();
@@ -155,16 +164,30 @@ export default function Login() {
 
           <div className="auth-divider">atau masuk dengan</div>
           <div className="oauth-buttons">
-            <button type="button" className="oauth-btn" disabled title="Segera hadir">
-              <GoogleIcon />
-              Google
-              <span className="oauth-soon">Segera</span>
-            </button>
-            <button type="button" className="oauth-btn" disabled title="Segera hadir">
-              <FacebookIcon />
-              Facebook
-              <span className="oauth-soon">Segera</span>
-            </button>
+            {oauthConfig.google ? (
+              <a href="/api/auth/google" className="oauth-btn">
+                <GoogleIcon />
+                Google
+              </a>
+            ) : (
+              <button type="button" className="oauth-btn" disabled title="Segera hadir">
+                <GoogleIcon />
+                Google
+                <span className="oauth-soon">Segera</span>
+              </button>
+            )}
+            {oauthConfig.facebook ? (
+              <a href="/api/auth/facebook" className="oauth-btn">
+                <FacebookIcon />
+                Facebook
+              </a>
+            ) : (
+              <button type="button" className="oauth-btn" disabled title="Segera hadir">
+                <FacebookIcon />
+                Facebook
+                <span className="oauth-soon">Segera</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

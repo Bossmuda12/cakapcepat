@@ -223,3 +223,12 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_expires TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_users_verification_token ON users(verification_token);
 CREATE INDEX IF NOT EXISTS idx_users_reset_token ON users(reset_token);
+
+-- Login sosial (Google / Facebook OAuth). google_id/facebook_id dipakai
+-- untuk mencocokkan akun yang sudah ada by email, atau membuat akun baru
+-- otomatis (email dari provider sudah terverifikasi oleh mereka, jadi
+-- email_verified langsung true tanpa perlu link verifikasi lagi).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_facebook_id ON users(facebook_id) WHERE facebook_id IS NOT NULL;
