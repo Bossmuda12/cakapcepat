@@ -270,7 +270,7 @@ authRouter.post("/auth/login", async (req, res) => {
   const { email, password } = parsed.data;
 
   const { rows } = await pool.query(
-    "SELECT id, organization_id, name, email, username, avatar_url, password_hash, role, email_verified FROM users WHERE email = $1",
+    "SELECT id, organization_id, name, email, username, avatar_url, password_hash, role, email_verified, needs_onboarding FROM users WHERE email = $1",
     [email.toLowerCase()]
   );
   const user = rows[0];
@@ -293,16 +293,66 @@ authRouter.post("/auth/login", async (req, res) => {
   );
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, username: user.username, avatar_url: user.avatar_url, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email, username: user.username, avatar_url: user.avatar_url, role: user.role, needs_onboarding: user.needs_onboarding },
   });
 });
 
 authRouter.get("/auth/me", requireAuth, async (req: AuthedRequest, res) => {
   const { rows } = await pool.query(
-    "SELECT id, name, email, username, avatar_url, role, email_verified FROM users WHERE id = $1",
+    "SELECT id, name, email, username, avatar_url, role, email_verified, needs_onboarding FROM users WHERE id = $1",
     [req.auth!.userId]
   );
   if (!rows[0]) return res.status(404).json({ error: "User tidak ditemukan" });
+  res.json(rows[0]);
+});
+
+const USERNAME_RE = /^[a-zA-Z0-9_.]{3,30}$/;
+
+const completeProfileSchema = z.object({
+  name: z.string().min(1, "Nama wajib diisi"),
+  username: z
+    .string()
+    .regex(USERNAME_RE, "Username 3-30 karakter, hanya huruf/angka/underscore/titik")
+    .optional()
+    .or(z.literal("")),
+  phone: z.string().min(1).optional().or(z.literal("")),
+  password: z.string().min(8, "Password minimal 8 karakter"),
+});
+
+/**
+ * Dipakai halaman /complete-profile (frontend) — langkah wajib sekali untuk
+ * user yang baru pertama kali daftar lewat Google/Facebook. Waktu itu akun
+ * dibuat dengan password acak (needs_onboarding = true) supaya mereka tidak
+ * bisa login manual sebelum sengaja set password sendiri. Endpoint ini
+ * mengisi nama/username/telepon final + password asli, lalu mematikan flag
+ * needs_onboarding supaya Gate di frontend tidak menahan mereka lagi.
+ */
+authRouter.post("/auth/complete-profile", requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = completeProfileSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { name, username, phone, password } = parsed.data;
+
+  if (username) {
+    const { rows: dupe } = await pool.query(
+      "SELECT id FROM users WHERE username = $1 AND id <> $2",
+      [username, req.auth!.userId]
+    );
+    if (dupe[0]) return res.status(409).json({ error: "Username sudah dipakai orang lain" });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  const { rows } = await pool.query(
+    `UPDATE users SET
+       name = $1,
+       username = CASE WHEN $2::text IS NULL OR $2 = '' THEN username ELSE $2 END,
+       phone = CASE WHEN $3::text IS NULL OR $3 = '' THEN phone ELSE $3 END,
+       password_hash = $4,
+       needs_onboarding = false
+     WHERE id = $5
+     RETURNING id, name, email, username, avatar_url, role, email_verified, needs_onboarding`,
+    [name, username ?? null, phone ?? null, passwordHash, req.auth!.userId]
+  );
   res.json(rows[0]);
 });
 
@@ -441,8 +491,8 @@ authRouter.get("/auth/google/callback", async (req, res) => {
         organizationId = orgRows[0].id;
         const { rows: userRows } = await client.query(
           `INSERT INTO users
-             (organization_id, email, name, password_hash, role, email_verified, google_id)
-           VALUES ($1, $2, $3, $4, 'owner', true, $5) RETURNING id`,
+             (organization_id, email, name, password_hash, role, email_verified, google_id, needs_onboarding)
+           VALUES ($1, $2, $3, $4, 'owner', true, $5, true) RETURNING id`,
           [organizationId, normalizedEmail, name, passwordHash, profile.sub]
         );
         await client.query("COMMIT");
@@ -578,8 +628,8 @@ authRouter.get("/auth/facebook/callback", async (req, res) => {
         organizationId = orgRows[0].id;
         const { rows: userRows } = await client.query(
           `INSERT INTO users
-             (organization_id, email, name, password_hash, role, email_verified, facebook_id)
-           VALUES ($1, $2, $3, $4, 'owner', true, $5) RETURNING id`,
+             (organization_id, email, name, password_hash, role, email_verified, facebook_id, needs_onboarding)
+           VALUES ($1, $2, $3, $4, 'owner', true, $5, true) RETURNING id`,
           [organizationId, normalizedEmail, name, passwordHash, profile.id]
         );
         await client.query("COMMIT");

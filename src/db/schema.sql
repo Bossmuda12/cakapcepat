@@ -240,3 +240,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_facebook_id ON users(facebook_id) WH
 ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;
+
+-- Onboarding: user yang daftar lewat Google/Facebook OAuth belum punya
+-- password beneran (random) dan belum sempat lengkapi data diri. Flag ini
+-- memaksa mereka lewat halaman /complete-profile sekali sebelum masuk dashboard.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS needs_onboarding BOOLEAN NOT NULL DEFAULT false;

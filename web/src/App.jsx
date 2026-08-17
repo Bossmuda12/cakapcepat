@@ -7,6 +7,7 @@ import ForgotPassword from "./pages/ForgotPassword";
 import ResetPassword from "./pages/ResetPassword";
 import VerifyEmail from "./pages/VerifyEmail";
 import OAuthCallback from "./pages/OAuthCallback";
+import CompleteProfile from "./pages/CompleteProfile";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import DataDeletion from "./pages/DataDeletion";
 import Bootstrap from "./pages/Bootstrap";
@@ -31,6 +32,7 @@ function Gate({ children }) {
   if (loading) return <div className="loading-block">Memuat...</div>;
   if (needsBootstrap) return <Bootstrap />;
   if (!user) return <Login />;
+  if (user.needs_onboarding) return <CompleteProfile />;
   return children;
 }
 
