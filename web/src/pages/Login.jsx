@@ -104,9 +104,6 @@ export default function Login() {
 
       <div className="auth-form-side">
         <div className="auth-form-card">
-          <div className="auth-logo-mobile">
-            <img src="/logo.png" alt="CakapCepat" />
-          </div>
           <h1>Masuk ke CakapCepat</h1>
           <p className="subtitle">Otomasi WhatsApp untuk tim kamu</p>
 
@@ -129,20 +126,6 @@ export default function Login() {
             </div>
           )}
           {resendMessage && <div className="notice-box">{resendMessage}</div>}
-
-          <div className="oauth-buttons">
-            <button type="button" className="oauth-btn" disabled title="Segera hadir">
-              <GoogleIcon />
-              Masuk dengan Google
-              <span className="oauth-soon">Segera</span>
-            </button>
-            <button type="button" className="oauth-btn" disabled title="Segera hadir">
-              <FacebookIcon />
-              Masuk dengan Facebook
-              <span className="oauth-soon">Segera</span>
-            </button>
-          </div>
-          <div className="auth-divider">atau pakai email</div>
 
           <form onSubmit={onSubmit}>
             <div className="field">
@@ -168,6 +151,20 @@ export default function Login() {
           </div>
           <div className="auth-links">
             Belum punya akun? <Link to="/register">Daftar di sini</Link>
+          </div>
+
+          <div className="auth-divider">atau masuk dengan</div>
+          <div className="oauth-buttons">
+            <button type="button" className="oauth-btn" disabled title="Segera hadir">
+              <GoogleIcon />
+              Google
+              <span className="oauth-soon">Segera</span>
+            </button>
+            <button type="button" className="oauth-btn" disabled title="Segera hadir">
+              <FacebookIcon />
+              Facebook
+              <span className="oauth-soon">Segera</span>
+            </button>
           </div>
         </div>
       </div>
