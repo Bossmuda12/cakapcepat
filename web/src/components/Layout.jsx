@@ -103,8 +103,19 @@ export default function Layout() {
           <span className="theme-toggle-label">{theme === "light" ? "Mode Gelap" : "Mode Terang"}</span>
         </button>
         <div className="user-box">
-          <div className="name">{user?.name || user?.email}</div>
-          <div>{user?.role}</div>
+          <div className="user-box-row">
+            <div className="user-box-avatar">
+              {user?.avatar_url ? (
+                <img src={user.avatar_url} alt="" />
+              ) : (
+                <span>{(user?.name || user?.email || "?").trim().charAt(0).toUpperCase()}</span>
+              )}
+            </div>
+            <div>
+              <div className="name">{user?.username || user?.name || user?.email}</div>
+              <div>{user?.role}</div>
+            </div>
+          </div>
           <button onClick={logout}>Keluar</button>
         </div>
       </aside>

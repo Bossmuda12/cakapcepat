@@ -130,3 +130,104 @@ channelsRouter.patch("/channels/:id/assign", requireAuth, async (req: AuthedRequ
   if (!rows[0]) return res.status(404).json({ error: "Channel tidak ditemukan" });
   res.json(rows[0]);
 });
+
+const updateChannelSchema = z.object({
+  label: z.string().optional(),
+  displayPhoneNumber: z.string().optional(),
+  phoneNumberId: z.string().min(1).optional(),
+  accessToken: z.string().min(1).optional(), // kosongkan di form frontend berarti "tidak diganti"
+  ownerUserId: z.string().uuid().nullable().optional(),
+  productId: z.string().uuid().nullable().optional(),
+  departmentId: z.string().uuid().nullable().optional(),
+});
+
+/**
+ * Edit nomor WhatsApp yang sudah terdaftar — sebelum ini dashboard cuma
+ * bisa MENDAFTARKAN nomor baru, tidak ada cara mengedit label/nomor/token
+ * atau melepas pemilik-produk-departemen yang salah pilih. Dibangun beda
+ * dari /assign di atas: field yang benar-benar dikirim di body (termasuk
+ * null, untuk "lepaskan") langsung dipakai, field yang tidak dikirim sama
+ * sekali dibiarkan apa adanya — jadi klien BISA sengaja mengosongkan
+ * owner/product/department, tidak seperti COALESCE di endpoint /assign lama.
+ */
+channelsRouter.patch("/channels/:id", requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = updateChannelSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const body = parsed.data;
+
+  const { rows: existingRows } = await pool.query(
+    "SELECT * FROM whatsapp_channels WHERE id = $1 AND organization_id = $2",
+    [req.params.id, req.auth!.organizationId]
+  );
+  const existing = existingRows[0];
+  if (!existing) return res.status(404).json({ error: "Channel tidak ditemukan" });
+
+  const columnMap: Record<string, string> = {
+    label: "label",
+    displayPhoneNumber: "display_phone_number",
+    phoneNumberId: "phone_number_id",
+    accessToken: "access_token",
+    ownerUserId: "owner_user_id",
+    productId: "product_id",
+    departmentId: "department_id",
+  };
+
+  // Kalau nomor/token diganti, verifikasi ulang ke Meta sebelum disimpan,
+  // sama seperti saat pendaftaran awal (best-effort, tidak memblokir simpan).
+  let status: string | undefined;
+  const newPhoneNumberId = body.phoneNumberId ?? existing.phone_number_id;
+  const newAccessToken = body.accessToken ?? existing.access_token;
+  if (body.phoneNumberId !== undefined || body.accessToken !== undefined) {
+    try {
+      const verifyRes = await fetch(
+        `https://graph.facebook.com/${config.whatsapp.graphApiVersion}/${newPhoneNumberId}?fields=display_phone_number,verified_name`,
+        { headers: { Authorization: `Bearer ${newAccessToken}` } }
+      );
+      status = verifyRes.ok ? "connected" : "disconnected";
+    } catch (err) {
+      console.warn("[channels] Gagal verifikasi ulang ke Meta saat edit:", err);
+      status = "pending";
+    }
+  }
+
+  const setClauses: string[] = [];
+  const values: unknown[] = [];
+  let idx = 1;
+  for (const [key, column] of Object.entries(columnMap)) {
+    if (Object.prototype.hasOwnProperty.call(req.body, key)) {
+      idx += 1;
+      setClauses.push(`${column} = $${idx}`);
+      values.push((body as Record<string, unknown>)[key] ?? null);
+    }
+  }
+  if (status !== undefined) {
+    idx += 1;
+    setClauses.push(`status = $${idx}`);
+    values.push(status);
+  }
+  if (setClauses.length === 0) return res.status(400).json({ error: "Tidak ada perubahan dikirim" });
+
+  const { rows } = await pool.query(
+    `UPDATE whatsapp_channels SET ${setClauses.join(", ")}
+     WHERE id = $1
+     RETURNING id, label, display_phone_number, status, owner_user_id, product_id, department_id`,
+    [req.params.id, ...values]
+  );
+  res.json(rows[0]);
+});
+
+/**
+ * Hapus nomor WhatsApp. CASCADE di schema akan ikut menghapus semua
+ * conversations/messages/broadcast_targets yang terikat ke channel ini
+ * (lihat ON DELETE CASCADE di schema.sql) — frontend WAJIB konfirmasi
+ * eksplisit ke user sebelum memanggil endpoint ini karena sifatnya
+ * merusak/tidak bisa dibatalkan.
+ */
+channelsRouter.delete("/channels/:id", requireAuth, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    "DELETE FROM whatsapp_channels WHERE id = $1 AND organization_id = $2 RETURNING id",
+    [req.params.id, req.auth!.organizationId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Channel tidak ditemukan" });
+  res.json({ ok: true });
+});

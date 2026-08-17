@@ -32,6 +32,9 @@ app.use(cors());
 // untuk verifikasi signature (X-Hub-Signature-256) dari Meta.
 app.use(
   express.json({
+    // limit dinaikkan dari default 100kb supaya upload foto profil (avatar
+    // disimpan sebagai data URL base64) tidak ditolak body-parser.
+    limit: "3mb",
     verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
       req.rawBody = buf;
     },

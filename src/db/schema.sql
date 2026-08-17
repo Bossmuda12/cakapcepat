@@ -232,3 +232,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS facebook_id TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_facebook_id ON users(facebook_id) WHERE facebook_id IS NOT NULL;
+
+-- Username terpisah dari email (email tetap dipakai untuk login, username
+-- untuk identitas tampilan yang bisa diubah bebas) + foto profil (disimpan
+-- sebagai data URL base64 langsung di kolom, jadi otomatis sinkron di semua
+-- device/browser karena datanya dari backend, bukan localStorage).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS username TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username IS NOT NULL;

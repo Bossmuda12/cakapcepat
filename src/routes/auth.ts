@@ -270,7 +270,7 @@ authRouter.post("/auth/login", async (req, res) => {
   const { email, password } = parsed.data;
 
   const { rows } = await pool.query(
-    "SELECT id, organization_id, name, email, password_hash, role, email_verified FROM users WHERE email = $1",
+    "SELECT id, organization_id, name, email, username, avatar_url, password_hash, role, email_verified FROM users WHERE email = $1",
     [email.toLowerCase()]
   );
   const user = rows[0];
@@ -293,13 +293,13 @@ authRouter.post("/auth/login", async (req, res) => {
   );
   res.json({
     token,
-    user: { id: user.id, name: user.name, email: user.email, role: user.role },
+    user: { id: user.id, name: user.name, email: user.email, username: user.username, avatar_url: user.avatar_url, role: user.role },
   });
 });
 
 authRouter.get("/auth/me", requireAuth, async (req: AuthedRequest, res) => {
   const { rows } = await pool.query(
-    "SELECT id, name, email, role, email_verified FROM users WHERE id = $1",
+    "SELECT id, name, email, username, avatar_url, role, email_verified FROM users WHERE id = $1",
     [req.auth!.userId]
   );
   if (!rows[0]) return res.status(404).json({ error: "User tidak ditemukan" });
