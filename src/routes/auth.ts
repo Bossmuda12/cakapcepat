@@ -465,3 +465,140 @@ authRouter.get("/auth/google/callback", async (req, res) => {
     return failRedirect("Terjadi kesalahan saat masuk dengan Google.");
   }
 });
+
+const FACEBOOK_REDIRECT_URI = () => `${config.appUrl}/api/auth/facebook/callback`;
+const FACEBOOK_API_VERSION = "v21.0";
+
+/**
+ * Sama persis pola-nya dengan /auth/google di atas: redirect ke consent
+ * screen Facebook, state di-signed JWT (stateless CSRF protection).
+ */
+authRouter.get("/auth/facebook", (_req, res) => {
+  if (!config.oauth.facebook.clientId) {
+    return res.status(503).send("Login dengan Facebook belum dikonfigurasi di server ini.");
+  }
+  const state = jwt.sign({ purpose: "facebook-oauth" }, config.jwtSecret, { expiresIn: "10m" });
+  const url = new URL(`https://www.facebook.com/${FACEBOOK_API_VERSION}/dialog/oauth`);
+  url.searchParams.set("client_id", config.oauth.facebook.clientId);
+  url.searchParams.set("redirect_uri", FACEBOOK_REDIRECT_URI());
+  url.searchParams.set("response_type", "code");
+  url.searchParams.set("scope", "email,public_profile");
+  url.searchParams.set("state", state);
+  res.redirect(url.toString());
+});
+
+/**
+ * Callback dari Facebook. Sama alurnya dengan Google: tukar code -> access
+ * token -> profil (id, name, email) -> link/buat akun -> redirect ke
+ * /oauth-callback?token=... . Bedanya: Facebook TIDAK selalu mengembalikan
+ * email (akun tanpa email terverifikasi, atau login lewat nomor HP) —
+ * kasus itu ditolak dengan pesan jelas karena skema DB kita mewajibkan
+ * email unik sebagai identitas login.
+ */
+authRouter.get("/auth/facebook/callback", async (req, res) => {
+  const code = String(req.query.code || "");
+  const state = String(req.query.state || "");
+  const oauthError = String(req.query.error || "");
+
+  const failRedirect = (message: string) =>
+    res.redirect(`${config.appUrl}/?oauthError=${encodeURIComponent(message)}`);
+
+  if (oauthError) return failRedirect("Login dengan Facebook dibatalkan.");
+  if (!code) return failRedirect("Kode otorisasi dari Facebook tidak ada.");
+
+  try {
+    jwt.verify(state, config.jwtSecret);
+  } catch {
+    return failRedirect("Sesi login Facebook tidak valid atau sudah kedaluwarsa. Coba lagi.");
+  }
+
+  if (!config.oauth.facebook.clientId || !config.oauth.facebook.clientSecret) {
+    return failRedirect("Login dengan Facebook belum dikonfigurasi di server ini.");
+  }
+
+  try {
+    const tokenUrl = new URL(`https://graph.facebook.com/${FACEBOOK_API_VERSION}/oauth/access_token`);
+    tokenUrl.searchParams.set("client_id", config.oauth.facebook.clientId);
+    tokenUrl.searchParams.set("client_secret", config.oauth.facebook.clientSecret);
+    tokenUrl.searchParams.set("redirect_uri", FACEBOOK_REDIRECT_URI());
+    tokenUrl.searchParams.set("code", code);
+
+    const tokenRes = await fetch(tokenUrl.toString());
+    if (!tokenRes.ok) {
+      const body = await tokenRes.text().catch(() => "");
+      console.error(`[oauth] Facebook token exchange gagal: HTTP ${tokenRes.status} — ${body}`);
+      return failRedirect("Gagal masuk dengan Facebook. Coba lagi.");
+    }
+    const tokenData = (await tokenRes.json()) as { access_token: string };
+
+    const profileUrl = new URL(`https://graph.facebook.com/me`);
+    profileUrl.searchParams.set("fields", "id,name,email");
+    profileUrl.searchParams.set("access_token", tokenData.access_token);
+    const profileRes = await fetch(profileUrl.toString());
+    if (!profileRes.ok) return failRedirect("Gagal mengambil profil Facebook kamu.");
+    const profile = (await profileRes.json()) as { id: string; name?: string; email?: string };
+
+    if (!profile.email) {
+      return failRedirect(
+        "Akun Facebook kamu tidak punya email terverifikasi. Gunakan email/password atau Google untuk daftar/masuk."
+      );
+    }
+    const normalizedEmail = profile.email.toLowerCase();
+    const name = profile.name || normalizedEmail.split("@")[0];
+
+    const { rows: existing } = await pool.query(
+      "SELECT id, organization_id, role, facebook_id FROM users WHERE email = $1",
+      [normalizedEmail]
+    );
+
+    let userId: string;
+    let organizationId: string;
+    let role: string;
+
+    if (existing[0]) {
+      userId = existing[0].id;
+      organizationId = existing[0].organization_id;
+      role = existing[0].role;
+      if (!existing[0].facebook_id) {
+        await pool.query(
+          "UPDATE users SET facebook_id = $1, email_verified = true WHERE id = $2",
+          [profile.id, userId]
+        );
+      }
+    } else {
+      const randomPassword = crypto.randomBytes(24).toString("hex");
+      const passwordHash = await bcrypt.hash(randomPassword, 10);
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        const { rows: orgRows } = await client.query(
+          "INSERT INTO organization (name) VALUES ($1) RETURNING id",
+          [`Organisasi ${name}`]
+        );
+        organizationId = orgRows[0].id;
+        const { rows: userRows } = await client.query(
+          `INSERT INTO users
+             (organization_id, email, name, password_hash, role, email_verified, facebook_id)
+           VALUES ($1, $2, $3, $4, 'owner', true, $5) RETURNING id`,
+          [organizationId, normalizedEmail, name, passwordHash, profile.id]
+        );
+        await client.query("COMMIT");
+        userId = userRows[0].id;
+        role = "owner";
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      } finally {
+        client.release();
+      }
+    }
+
+    const token = jwt.sign({ userId, organizationId, role }, config.jwtSecret, {
+      expiresIn: "30d",
+    });
+    res.redirect(`${config.appUrl}/oauth-callback?token=${token}`);
+  } catch (err) {
+    console.error("[oauth] Facebook login gagal:", err);
+    return failRedirect("Terjadi kesalahan saat masuk dengan Facebook.");
+  }
+});
