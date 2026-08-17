@@ -1,46 +1,35 @@
-import nodemailer from "nodemailer";
-import type SMTPTransport from "nodemailer/lib/smtp-transport";
 import { config } from "./config";
 
-// Transport Gmail SMTP + App Password. Dibuat lazy (bukan langsung saat
-// import) supaya server tetap bisa jalan walau kredensial belum diisi —
-// baru dicek pas benar-benar mau kirim email.
-function getTransport() {
-  if (!config.email.gmailUser || !config.email.gmailAppPassword) return null;
-  const options = {
-    host: "smtp.gmail.com",
-    port: 465,
-    secure: true,
-    // Banyak host cloud (termasuk Railway) punya rute IPv6 yang rusak ke
-    // Gmail, sehingga koneksi menggantung sampai timeout walau kredensial
-    // benar. Paksa IPv4 (family: 4) supaya konek langsung jalan.
-    family: 4,
-    connectionTimeout: 15000,
-    greetingTimeout: 15000,
-    socketTimeout: 15000,
-    auth: {
-      user: config.email.gmailUser,
-      pass: config.email.gmailAppPassword,
-    },
-  };
-  return nodemailer.createTransport(options as SMTPTransport.Options);
-}
-
+// Pengiriman email lewat Resend HTTP API (https://api.resend.com/emails).
+// Dipakai (bukan SMTP) karena banyak host cloud termasuk Railway plan
+// Free/Trial/Hobby memblokir outbound SMTP sepenuhnya — HTTP API jalan
+// lewat port 443 biasa sehingga tidak kena blokir itu.
 async function send(to: string, subject: string, html: string): Promise<boolean> {
-  const transport = getTransport();
-  if (!transport) {
+  if (!config.email.resendApiKey) {
     console.warn(
-      `[email] GMAIL_USER / GMAIL_APP_PASSWORD belum diisi — email ke ${to} ("${subject}") TIDAK dikirim.`
+      `[email] RESEND_API_KEY belum diisi — email ke ${to} ("${subject}") TIDAK dikirim.`
     );
     return false;
   }
   try {
-    await transport.sendMail({
-      from: `"${config.email.fromName}" <${config.email.gmailUser}>`,
-      to,
-      subject,
-      html,
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${config.email.resendApiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        from: `${config.email.fromName} <${config.email.fromAddress}>`,
+        to: [to],
+        subject,
+        html,
+      }),
     });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      console.error(`[email] Gagal kirim email ke ${to}: HTTP ${res.status} — ${body}`);
+      return false;
+    }
     return true;
   } catch (err) {
     console.error(`[email] Gagal kirim email ke ${to}:`, err);

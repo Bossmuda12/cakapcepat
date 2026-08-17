@@ -41,13 +41,19 @@ export const config = {
   // reset password di dalam isi email. Set APP_URL di Railway ke domain asli.
   appUrl: process.env.APP_URL ?? "http://localhost:5173",
 
-  // Pengiriman email (verifikasi akun & lupa password) lewat Gmail SMTP +
-  // App Password (myaccount.google.com/apppasswords). Kalau kosong, email
-  // tidak akan terkirim — dicatat di log server saja (supaya dev/testing
-  // nggak nge-block tanpa kredensial ini).
+  // Pengiriman email (verifikasi akun & lupa password) lewat Resend HTTP API
+  // (bukan SMTP — banyak host cloud termasuk Railway plan Free/Hobby
+  // memblokir outbound SMTP sepenuhnya, jadi Gmail App Password tidak akan
+  // pernah jalan di plan itu). Resend API jalan lewat HTTPS biasa (port 443)
+  // sehingga tidak diblokir. Kalau kosong, email tidak akan terkirim —
+  // dicatat di log server saja (supaya dev/testing nggak nge-block tanpa
+  // kredensial ini).
   email: {
-    gmailUser: process.env.GMAIL_USER ?? "",
-    gmailAppPassword: process.env.GMAIL_APP_PASSWORD ?? "",
+    resendApiKey: process.env.RESEND_API_KEY ?? "",
+    // onboarding@resend.dev jalan tanpa verifikasi domain — cocok untuk
+    // mulai cepat. Kalau domain sendiri (mis. tahagroup.id) sudah
+    // diverifikasi di Resend, set EMAIL_FROM_ADDRESS ke alamat domain itu.
+    fromAddress: process.env.EMAIL_FROM_ADDRESS ?? "onboarding@resend.dev",
     fromName: process.env.EMAIL_FROM_NAME ?? "CakapCepat",
   },
 };
