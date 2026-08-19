@@ -2,9 +2,8 @@ import { Router, type Request, type Response } from "express";
 import crypto from "node:crypto";
 import { config } from "../config";
 import { pool } from "../db/pool";
-import { maybeGenerateAiReply } from "../ai/chatbot";
 import { sendTextMessage } from "./client";
-import { broadcastToOrg } from "../realtime";
+import { ingestInboundMessage, maybeAutoReply } from "./ingest";
 
 export const webhookRouter = Router();
 
@@ -102,144 +101,35 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
   // 1 CS untuk 1 produk tanpa harus terikat departemen (lihat Bab 4 dokumen rencana v2).
   const organizationId = channel.organization_id;
 
-  const { rows: contactRows } = await pool.query(
-    `INSERT INTO contacts (organization_id, wa_number, name)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (organization_id, wa_number) DO UPDATE SET name = COALESCE(contacts.name, EXCLUDED.name)
-     RETURNING id`,
-    [organizationId, msg.from, waContact?.profile?.name ?? null]
-  );
-  const contactId = contactRows[0].id;
-
   // --- Tangkap data atribusi iklan CTWA (Click-to-WhatsApp), lihat Bab 8 dokumen rencana ---
   // Meta menyisipkan objek "referral" di pesan PERTAMA yang datang dari klik iklan CTWA.
+  // Ini SATU-SATUNYA jalur yang pernah punya ctwaClid — nomor QR/pairing tidak pernah dapat ini.
   const referral = msg.referral; // { source_url, ctwa_clid, headline, ... } kalau berasal dari iklan
   const ctwaClid: string | null = referral?.ctwa_clid ?? null;
-
-  const { rows: convoRows } = await pool.query(
-    `INSERT INTO conversations (contact_id, channel_id, ctwa_clid, ad_source_url, last_message_at)
-     VALUES ($1, $2, $3, $4, now())
-     ON CONFLICT DO NOTHING
-     RETURNING id`,
-    [contactId, channel.id, ctwaClid, referral?.source_url ?? null]
-  );
-
-  // Kalau conversation sudah ada sebelumnya (kontak chat lagi), ambil id-nya.
-  let conversationId = convoRows[0]?.id;
-  if (!conversationId) {
-    const { rows } = await pool.query(
-      "SELECT id FROM conversations WHERE contact_id = $1 AND channel_id = $2 ORDER BY created_at DESC LIMIT 1",
-      [contactId, channel.id]
-    );
-    conversationId = rows[0]?.id;
-    await pool.query("UPDATE conversations SET last_message_at = now() WHERE id = $1", [conversationId]);
-  }
-
   if (ctwaClid) {
     console.log(`[webhook] Chat ini berasal dari iklan CTWA, ctwa_clid=${ctwaClid}`);
   }
 
   const textBody = msg.text?.body ?? "";
-  await pool.query(
-    `INSERT INTO messages (conversation_id, direction, wa_message_id, content_type, content, status)
-     VALUES ($1, 'inbound', $2, 'text', $3, 'received')`,
-    [conversationId, msg.id, JSON.stringify({ body: textBody })]
-  );
 
-  // Sinyal real-time ke dashboard (halaman Percakapan & Monitor) — pemanggil
-  // cukup refetch data terkini saat menerima event ini, lihat web/src/useRealtime.js.
-  broadcastToOrg(organizationId, { type: "message", conversationId });
+  const { conversationId } = await ingestInboundMessage({
+    channelId: channel.id,
+    organizationId,
+    waNumber: msg.from,
+    contactName: waContact?.profile?.name ?? null,
+    waMessageId: msg.id,
+    textBody,
+    ctwaClid,
+    adSourceUrl: referral?.source_url ?? null,
+  });
 
   await maybeAutoReply({
     organizationId,
     conversationId,
     channelId: channel.id,
-    to: msg.from,
-    phoneNumberId,
-    accessToken: channel.access_token,
     incomingText: textBody,
+    send: async (replyText) => {
+      await sendTextMessage({ to: msg.from, body: replyText, phoneNumberId, accessToken: channel.access_token });
+    },
   });
-}
-
-interface AutoReplyParams {
-  organizationId: string;
-  conversationId: string;
-  channelId: string;
-  to: string;
-  phoneNumberId: string;
-  accessToken: string;
-  incomingText: string;
-}
-
-/**
- * Urutan auto-reply (lihat halaman "Otomatisasi" di dashboard):
- *   1. Aturan keyword yang cocok — balas langsung, berhenti di sini.
- *   2. Aturan office_hours — kalau di luar jam kerja, kirim balasan itu, berhenti.
- *   3. Fallback ke AI chatbot — hanya kalau ada automation aktif bertipe
- *      'fallback_to_ai' UNTUK channel ini, ATAU channel belum punya automation
- *      sama sekali (supaya perilaku lama tetap jalan kalau belum diatur manual).
- */
-async function maybeAutoReply(params: AutoReplyParams) {
-  const { organizationId, conversationId, channelId, to, phoneNumberId, accessToken, incomingText } = params;
-
-  const { rows: automations } = await pool.query(
-    "SELECT trigger_type, config, is_active FROM automations WHERE channel_id = $1",
-    [channelId]
-  );
-
-  const sendAndLog = async (replyText: string, senderType: "human" | "ai" = "human") => {
-    await sendTextMessage({ to, body: replyText, phoneNumberId, accessToken });
-    await pool.query(
-      `INSERT INTO messages (conversation_id, direction, sender_type, content_type, content, status)
-       VALUES ($1, 'outbound', $2, 'text', $3, 'sent')`,
-      [conversationId, senderType, JSON.stringify({ body: replyText })]
-    );
-    broadcastToOrg(organizationId, { type: "message", conversationId });
-  };
-
-  const activeKeywordRules = automations.filter((a) => a.trigger_type === "keyword" && a.is_active);
-  for (const rule of activeKeywordRules) {
-    const keyword: string | undefined = rule.config?.keyword;
-    const reply: string | undefined = rule.config?.reply;
-    if (keyword && reply && incomingText.toLowerCase().includes(keyword.toLowerCase())) {
-      await sendAndLog(reply);
-      return;
-    }
-  }
-
-  const officeHoursRule = automations.find((a) => a.trigger_type === "office_hours" && a.is_active);
-  if (officeHoursRule && isOutsideOfficeHours(officeHoursRule.config)) {
-    const reply: string | undefined = officeHoursRule.config?.outsideReply;
-    if (reply) {
-      await sendAndLog(reply);
-      return;
-    }
-  }
-
-  const hasFallbackToAiRule = automations.some((a) => a.trigger_type === "fallback_to_ai" && a.is_active);
-  const noAutomationsConfigured = automations.length === 0;
-  if (hasFallbackToAiRule || noAutomationsConfigured) {
-    const aiReply = await maybeGenerateAiReply({ organizationId, conversationId, incomingText });
-    if (aiReply) {
-      await sendAndLog(aiReply, "ai");
-    }
-  }
-}
-
-// Zona waktu Indonesia Barat (WIB, UTC+7) dipakai sebagai default kalau
-// config.timezone tidak diisi — cukup untuk kebanyakan tim internal di Indonesia.
-function isOutsideOfficeHours(cfg: { start?: string; end?: string; utcOffsetHours?: number }): boolean {
-  const start = cfg?.start ?? "09:00";
-  const end = cfg?.end ?? "17:00";
-  const offset = cfg?.utcOffsetHours ?? 7;
-
-  const now = new Date();
-  const localMinutes = ((now.getUTCHours() + offset) * 60 + now.getUTCMinutes()) % (24 * 60);
-
-  const [startH, startM] = start.split(":").map(Number);
-  const [endH, endM] = end.split(":").map(Number);
-  const startMinutes = startH * 60 + startM;
-  const endMinutes = endH * 60 + endM;
-
-  return localMinutes < startMinutes || localMinutes >= endMinutes;
 }
