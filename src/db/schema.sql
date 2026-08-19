@@ -245,3 +245,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE us
 -- password beneran (random) dan belum sempat lengkapi data diri. Flag ini
 -- memaksa mereka lewat halaman /complete-profile sekali sebelum masuk dashboard.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS needs_onboarding BOOLEAN NOT NULL DEFAULT false;
+
+-- ============================================================================
+-- Status order COD (terpisah dari contacts.pipeline_stage yang dipakai untuk
+-- funnel sales umum) — dipakai halaman "Laporan Order" untuk menandai order
+-- COD per percakapan: order valid (qualified_cod), closing (uang diterima),
+-- spam, cancelled, atau returned. Nilai TERKINI disimpan langsung di
+-- conversations (buat query cepat), riwayat lengkap tiap perubahan status
+-- disimpan di order_status_events (buat laporan/export spreadsheet & audit
+-- kapan tiap event dikirim ke Meta CAPI, kalau memang dikirim).
+-- ============================================================================
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS order_status TEXT;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS order_value BIGINT;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS order_status_updated_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS order_status_events (
+  id                    UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  conversation_id       UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  status                TEXT NOT NULL,   -- qualified_cod | closing | spam | cancelled | returned
+  value                 BIGINT,
+  note                  TEXT,
+  changed_by            UUID REFERENCES users(id) ON DELETE SET NULL,
+  -- Diisi kalau status ini memicu pelaporan ke Meta CAPI (lihat src/whatsapp/capi.ts).
+  -- Tetap NULL untuk status yang sengaja TIDAK dilaporkan ke Meta (spam/cancelled/
+  -- returned) — dicatat di sini cuma untuk laporan internal, bukan dikirim ke Meta,
+  -- karena CAPI tidak punya cara resmi "membatalkan" event Purchase yang sudah terlanjur
+  -- terkirim.
+  capi_event_name       TEXT,
+  capi_response_status  INT,
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_order_status_events_conversation ON order_status_events(conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_order_status ON conversations(order_status);

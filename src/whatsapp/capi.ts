@@ -15,7 +15,8 @@ interface ReportConversionParams {
  * bukan cuma jumlah chat masuk. Lihat Bab 8 dokumen rencana untuk alur lengkap.
  *
  * Dipanggil dari routes/conversations.ts saat agent menandai lead sebagai
- * closing_won (atau event bisnis lain yang relevan).
+ * closing_won, dan dari routes/orders.ts saat status order COD diupdate jadi
+ * qualified_cod/closing (lihat STATUS_TO_CAPI_EVENT di sana).
  */
 export async function reportConversionToMeta({
   conversationId,
@@ -24,7 +25,7 @@ export async function reportConversionToMeta({
   currency = "IDR",
 }: ReportConversionParams) {
   const { rows } = await pool.query(
-    `SELECT conv.ctwa_clid, conv.conversion_reported, o.capi_pixel_id, o.capi_access_token
+    `SELECT conv.ctwa_clid, conv.conversion_reported, c.wa_number, o.capi_pixel_id, o.capi_access_token
      FROM conversations conv
      JOIN contacts c ON c.id = conv.contact_id
      JOIN organization o ON o.id = c.organization_id
@@ -50,6 +51,12 @@ export async function reportConversionToMeta({
     );
   }
 
+  // Sertakan nomor HP yang di-hash (SHA-256, wajib format E.164 tanpa "+") di
+  // user_data supaya Event Match Quality di Events Manager lebih tinggi —
+  // ctwa_clid saja biasanya sudah cukup untuk attribusi, tapi makin lengkap
+  // sinyalnya makin akurat (lihat catatan awal permintaan fitur ini).
+  const normalizedPhone = row.wa_number ? row.wa_number.replace(/[^0-9]/g, "") : null;
+
   const payload = {
     data: [
       {
@@ -58,6 +65,7 @@ export async function reportConversionToMeta({
         action_source: "business_messaging",
         messaging_channel: "whatsapp",
         ctwa_clid: row.ctwa_clid,
+        ...(normalizedPhone ? { user_data: { ph: [sha256(normalizedPhone)] } } : {}),
         ...(value !== undefined ? { custom_data: { value, currency } } : {}),
       },
     ],

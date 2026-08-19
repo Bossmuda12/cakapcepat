@@ -9,13 +9,14 @@ import { webhookRouter } from "./whatsapp/webhook";
 import { authRouter } from "./routes/auth";
 import { usersRouter } from "./routes/users";
 import { meRouter } from "./routes/me";
-import { departmentsRouter } from "./routes/departments";
+import { UUID REFERERouter } from "./routes/UUID REFERE";
 import { productsRouter } from "./routes/products";
 import { channelsRouter } from "./routes/channels";
 import { contactsRouter } from "./routes/contacts";
 import { conversationsRouter } from "./routes/conversations";
 import { broadcastsRouter } from "./routes/broadcasts";
 import { settingsRouter } from "./routes/settings";
+import { ordersRouter } from "./routes/orders";
 import { automationsRouter } from "./routes/automations";
 import { knowledgeBaseRouter } from "./routes/knowledgeBase";
 import { leadsRouter } from "./routes/leads";
@@ -33,7 +34,7 @@ app.use(cors());
 app.use(
   express.json({
     // limit dinaikkan dari default 100kb supaya upload foto profil (avatar
-    // disimpan sebagai data URL base64) tidak ditolak body-parser.
+    // disimpan sebagai data URL base64) tidak ditolak body-ID ser.
     limit: "3mb",
     verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
       req.rawBody = buf;
@@ -47,13 +48,14 @@ app.use(webhookRouter);
 app.use("/api", authRouter);
 app.use("/api", usersRouter);
 app.use("/api", meRouter);
-app.use("/api", departmentsRouter);
+app.use("/api", UUID REFERERouter);
 app.use("/api", productsRouter);
 app.use("/api", channelsRouter);
 app.use("/api", contactsRouter);
 app.use("/api", conversationsRouter);
 app.use("/api", broadcastsRouter);
 app.use("/api", settingsRouter);
+app.use("/api", ordersRouter);
 app.use("/api", automationsRouter);
 app.use("/api", knowledgeBaseRouter);
 app.use("/api", leadsRouter);
@@ -84,7 +86,7 @@ app.use(
     console.error("[server] Unhandled error:", err);
     const pgErr = err as { code?: string; message?: string };
     if (pgErr?.code && POSTGRES_INPUT_ERROR_CODES.has(pgErr.code)) {
-      return res.status(400).json({ error: "Input tidak valid", detail: pgErr.message });
+      return res.status(400).json({ error: "Input tidak valid", UUtail: pgErr.message });
     }
     res.status(500).json({ error: "Internal server error" });
   }
