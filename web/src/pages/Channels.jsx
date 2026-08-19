@@ -1,12 +1,20 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
+import QrConnectModal from "../components/QrConnectModal";
 
 const emptyForm = {
   label: "",
   phoneNumberId: "",
   accessToken: "",
   displayPhoneNumber: "",
+  ownerUserId: "",
+  productId: "",
+  departmentId: "",
+};
+
+const emptyQrForm = {
+  label: "",
   ownerUserId: "",
   productId: "",
   departmentId: "",
@@ -25,6 +33,14 @@ export default function Channels() {
   const [deletingRow, setDeletingRow] = useState(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+
+  // --- Nomor tim via QR/kode pairing (bukan Cloud API resmi) — lihat QrConnectModal ---
+  const [showQrCreateForm, setShowQrCreateForm] = useState(false);
+  const [qrForm, setQrForm] = useState(emptyQrForm);
+  const [qrCreateError, setQrCreateError] = useState("");
+  const [qrCreateBusy, setQrCreateBusy] = useState(false);
+  const [connectingChannel, setConnectingChannel] = useState(null); // channel yg lagi dibuka modal QR/pairing-nya
+  const [disconnectingId, setDisconnectingId] = useState(null);
 
   const load = async () => {
     try {
@@ -127,10 +143,60 @@ export default function Channels() {
     }
   };
 
-  const statusBadge = (status) => {
-    if (status === "connected") return <span className="badge green">Terhubung</span>;
-    if (status === "disconnected") return <span className="badge red">Terputus</span>;
+  const statusBadge = (row) => {
+    if (row.connection_type === "qr_session") {
+      const state = row.connection_state;
+      if (state === "connected") return <span className="badge green">Terhubung (QR)</span>;
+      if (state === "qr_pending") return <span className="badge yellow">Menunggu Scan QR</span>;
+      if (state === "pairing_pending") return <span className="badge yellow">Menunggu Kode Pairing</span>;
+      if (state === "reconnecting") return <span className="badge yellow">Menyambung Ulang...</span>;
+      if (state === "logged_out") return <span className="badge red">Logout — Sambung Ulang</span>;
+      return <span className="badge gray">Belum Disambungkan</span>;
+    }
+    if (row.status === "connected") return <span className="badge green">Terhubung</span>;
+    if (row.status === "disconnected") return <span className="badge red">Terputus</span>;
     return <span className="badge yellow">Menunggu</span>;
+  };
+
+  const updateQrForm = (key) => (e) => setQrForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const openQrCreate = () => {
+    setQrForm(emptyQrForm);
+    setQrCreateError("");
+    setShowQrCreateForm(true);
+  };
+
+  const onQrCreateSubmit = async (e) => {
+    e.preventDefault();
+    setQrCreateBusy(true);
+    setQrCreateError("");
+    try {
+      const created = await api.post("/channels/qr", {
+        label: qrForm.label || undefined,
+        ownerUserId: qrForm.ownerUserId || undefined,
+        productId: qrForm.productId || undefined,
+        departmentId: qrForm.departmentId || undefined,
+      });
+      setShowQrCreateForm(false);
+      await load();
+      setConnectingChannel(created);
+    } catch (err) {
+      setQrCreateError(err.message);
+    } finally {
+      setQrCreateBusy(false);
+    }
+  };
+
+  const disconnectQr = async (row) => {
+    setDisconnectingId(row.id);
+    try {
+      await api.post(`/channels/${row.id}/qr/disconnect`, {});
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDisconnectingId(null);
+    }
   };
 
   return (
@@ -140,12 +206,17 @@ export default function Channels() {
           <h1>Nomor WhatsApp</h1>
           <p className="page-subtitle">Setiap CS bisa punya nomor sendiri; produk baru bisa dapat nomor baru.</p>
         </div>
-        <button className="btn" onClick={openCreate}>
-          + Daftarkan Nomor
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="btn secondary" onClick={openQrCreate}>
+            + Sambungkan Nomor Tim (QR)
+          </button>
+          <button className="btn" onClick={openCreate}>
+            + Daftarkan Nomor (Cloud API)
+          </button>
+        </div>
       </div>
 
-      {error && !showForm && <div className="error-box">{error}</div>}
+      {error && !showForm && !showQrCreateForm && <div className="error-box">{error}</div>}
 
       <Modal
         open={showForm}
@@ -234,6 +305,75 @@ export default function Channels() {
         </form>
       </Modal>
 
+      <Modal
+        open={showQrCreateForm}
+        onClose={() => setShowQrCreateForm(false)}
+        title="Sambungkan nomor tim via QR/Kode Pairing"
+        width={480}
+      >
+        <form onSubmit={onQrCreateSubmit}>
+          {qrCreateError && <div className="error-box">{qrCreateError}</div>}
+          <p style={{ fontSize: 13, color: "var(--text-muted)", marginTop: -4, marginBottom: 16 }}>
+            Untuk nomor tim yang BELUM bisa dapat akses WhatsApp Cloud API resmi dari Meta. Nomor
+            tersambung langsung dari HP CS (seperti WhatsApp Web) — tidak butuh Phone Number ID / Access
+            Token dari Meta.
+          </p>
+          <div className="field" style={{ marginBottom: 12 }}>
+            <label>Label</label>
+            <input value={qrForm.label} onChange={updateQrForm("label")} placeholder="mis. CS Sari - Tim 2" />
+          </div>
+          <div className="inline-form">
+            <div className="field">
+              <label>Pemilik (CS)</label>
+              <select value={qrForm.ownerUserId} onChange={updateQrForm("ownerUserId")}>
+                <option value="">— tidak ditentukan —</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name || u.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Produk</label>
+              <select value={qrForm.productId} onChange={updateQrForm("productId")}>
+                <option value="">— tidak ditentukan —</option>
+                {products.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label>Departemen</label>
+              <select value={qrForm.departmentId} onChange={updateQrForm("departmentId")}>
+                <option value="">— tidak ditentukan —</option>
+                {departments.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <button className="btn block" type="submit" disabled={qrCreateBusy}>
+            {qrCreateBusy ? "Menyimpan..." : "Lanjut ke Sambungkan"}
+          </button>
+        </form>
+      </Modal>
+
+      {connectingChannel && (
+        <QrConnectModal
+          channel={connectingChannel}
+          onClose={() => {
+            setConnectingChannel(null);
+            load();
+          }}
+          onConnected={load}
+        />
+      )}
+
       <Modal open={!!deletingRow} onClose={() => setDeletingRow(null)} title="Hapus nomor WhatsApp?" width={460}>
         {deletingRow && (
           <div>
@@ -288,17 +428,50 @@ export default function Channels() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.id}>
-                  <td>{r.label || "—"}</td>
+                  <td>
+                    {r.label || "—"}
+                    {r.connection_type === "qr_session" && (
+                      <span className="badge gray" style={{ marginLeft: 6, fontSize: 10 }}>
+                        QR
+                      </span>
+                    )}
+                  </td>
                   <td>{r.display_phone_number || "—"}</td>
-                  <td>{statusBadge(r.status)}</td>
+                  <td>{statusBadge(r)}</td>
                   <td>{r.owner_name || "—"}</td>
                   <td>{r.product_name || "—"}</td>
                   <td>{r.department_name || "—"}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <button type="button" className="btn-link" onClick={() => openEdit(r)}>
-                      Edit
-                    </button>
-                    {" · "}
+                    {r.connection_type === "qr_session" && r.connection_state !== "connected" && (
+                      <>
+                        <button type="button" className="btn-link" onClick={() => setConnectingChannel(r)}>
+                          Sambungkan
+                        </button>
+                        {" · "}
+                      </>
+                    )}
+                    {r.connection_type === "qr_session" && r.connection_state === "connected" && (
+                      <>
+                        <button
+                          type="button"
+                          className="btn-link"
+                          style={{ color: "var(--danger)" }}
+                          disabled={disconnectingId === r.id}
+                          onClick={() => disconnectQr(r)}
+                        >
+                          {disconnectingId === r.id ? "Memutus..." : "Putuskan"}
+                        </button>
+                        {" · "}
+                      </>
+                    )}
+                    {r.connection_type !== "qr_session" && (
+                      <>
+                        <button type="button" className="btn-link" onClick={() => openEdit(r)}>
+                          Edit
+                        </button>
+                        {" · "}
+                      </>
+                    )}
                     <button
                       type="button"
                       className="btn-link"

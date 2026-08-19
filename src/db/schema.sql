@@ -277,3 +277,40 @@ CREATE TABLE IF NOT EXISTS order_status_events (
 );
 CREATE INDEX IF NOT EXISTS idx_order_status_events_conversation ON order_status_events(conversation_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_order_status ON conversations(order_status);
+
+-- ============================================================================
+-- Koneksi WhatsApp TANPA API resmi (QR code / kode pairing, ala WhatsApp Web)
+-- — dipakai untuk nomor TIM yang belum bisa dapat akses WhatsApp Cloud API
+-- resmi dari Meta (lihat pembatasan Account Quality). Nomor UTAMA tetap
+-- disarankan pakai Cloud API resmi (connection_type='cloud_api') supaya
+-- atribusi iklan CTWA & pelaporan Meta CAPI tetap jalan — QR/pairing cuma
+-- untuk nomor tim tambahan (pendekatan hybrid).
+-- ============================================================================
+ALTER TABLE whatsapp_channels ALTER COLUMN phone_number_id DROP NOT NULL;
+ALTER TABLE whatsapp_channels ALTER COLUMN access_token DROP NOT NULL;
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS connection_type TEXT NOT NULL DEFAULT 'cloud_api'; -- cloud_api | qr_session
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS connection_state TEXT NOT NULL DEFAULT 'idle'; -- idle | qr_pending | pairing_pending | connecting | connected | reconnecting | logged_out
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS qr_data_url TEXT;   -- QR code terkini sbg data:image, transient
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS pairing_code TEXT; -- kode pairing 8-digit terkini, transient
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS qr_requested_at TIMESTAMPTZ;
+
+-- Pastikan nomor Cloud API tetap wajib punya phone_number_id/access_token
+-- walaupun kolomnya sekarang nullable (biar nomor QR bisa kosong).
+-- ADD CONSTRAINT tidak punya IF NOT EXISTS bawaan Postgres, jadi dibungkus
+-- DO block supaya schema.sql tetap aman dijalankan berulang kali.
+DO $$ BEGIN
+  ALTER TABLE whatsapp_channels ADD CONSTRAINT chk_channel_cloud_api_fields
+    CHECK (connection_type <> 'cloud_api' OR (phone_number_id IS NOT NULL AND access_token IS NOT NULL));
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Auth-state Baileys (kredensial sesi WhatsApp Web + signal keys) per channel
+-- QR/pairing, disimpan di Postgres — BUKAN di disk lokal container — supaya
+-- sesi WA tidak hilang tiap kali Railway redeploy service.
+CREATE TABLE IF NOT EXISTS whatsapp_qr_auth_keys (
+  channel_id  UUID NOT NULL REFERENCES whatsapp_channels(id) ON DELETE CASCADE,
+  key_name    TEXT NOT NULL, -- 'creds' utk kredensial utama, atau '<tipe>-<id>' utk signal key (pre-key, session, dst)
+  value       JSONB,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (channel_id, key_name)
+);

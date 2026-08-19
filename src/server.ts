@@ -12,6 +12,7 @@ import { meRouter } from "./routes/me";
 import { departmentsRouter } from "./routes/departments";
 import { productsRouter } from "./routes/products";
 import { channelsRouter } from "./routes/channels";
+import { qrChannelsRouter } from "./routes/qrChannels";
 import { contactsRouter } from "./routes/contacts";
 import { conversationsRouter } from "./routes/conversations";
 import { broadcastsRouter } from "./routes/broadcasts";
@@ -24,6 +25,7 @@ import { teamRouter } from "./routes/team";
 import { statsRouter } from "./routes/stats";
 import { initRealtime } from "./realtime";
 import { initScheduler } from "./scheduler";
+import { resumeAllQrSessions } from "./whatsapp/qrSessionManager";
 
 const app = express();
 
@@ -51,6 +53,7 @@ app.use("/api", meRouter);
 app.use("/api", departmentsRouter);
 app.use("/api", productsRouter);
 app.use("/api", channelsRouter);
+app.use("/api", qrChannelsRouter);
 app.use("/api", contactsRouter);
 app.use("/api", conversationsRouter);
 app.use("/api", broadcastsRouter);
@@ -101,3 +104,8 @@ server.listen(config.port, () => {
   console.log(`[server] Webhook URL untuk didaftarkan ke Meta: http://<domain-publik-kamu>/webhook/whatsapp`);
   console.log(`[server] WebSocket real-time di ws://<domain-publik-kamu>/ws`);
 });
+
+// Sambungkan ulang semua nomor tim yang pakai QR/pairing (bukan Cloud API)
+// yang sesinya belum di-logout — best-effort, tidak memblokir startup server
+// kalau gagal (mis. kredensial WA sudah kedaluwarsa dari sisi HP).
+resumeAllQrSessions().catch((err) => console.error("[server] Gagal resume sesi QR saat startup:", err));

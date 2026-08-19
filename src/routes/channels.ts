@@ -3,6 +3,7 @@ import { z } from "zod";
 import { pool } from "../db/pool";
 import { requireAuth, type AuthedRequest } from "../middleware/auth";
 import { config } from "../config";
+import { disconnectQrSession } from "../whatsapp/qrSessionManager";
 
 export const channelsRouter = Router();
 
@@ -13,6 +14,7 @@ export const channelsRouter = Router();
 channelsRouter.get("/channels", requireAuth, async (req: AuthedRequest, res) => {
   const { rows } = await pool.query(
     `SELECT wc.id, wc.label, wc.display_phone_number, wc.status,
+            wc.connection_type, wc.connection_state,
             wc.owner_user_id, u.name AS owner_name,
             wc.product_id, p.name AS product_name,
             wc.department_id, d.name AS department_name,
@@ -224,6 +226,19 @@ channelsRouter.patch("/channels/:id", requireAuth, async (req: AuthedRequest, re
  * merusak/tidak bisa dibatalkan.
  */
 channelsRouter.delete("/channels/:id", requireAuth, async (req: AuthedRequest, res) => {
+  // Kalau ini nomor QR/pairing, putuskan socketnya dulu (logout dari HP)
+  // sebelum baris channel-nya dihapus dari DB — supaya tidak ada socket
+  // "nyangkut" di memory yang terus mencoba reconnect ke channel yang sudah hilang.
+  const { rows: existing } = await pool.query(
+    "SELECT connection_type FROM whatsapp_channels WHERE id = $1 AND organization_id = $2",
+    [req.params.id, req.auth!.organizationId]
+  );
+  if (existing[0]?.connection_type === "qr_session") {
+    await disconnectQrSession(req.params.id).catch((err) =>
+      console.warn("[channels] Gagal disconnect sesi QR sebelum hapus (lanjut hapus juga):", err)
+    );
+  }
+
   const { rows } = await pool.query(
     "DELETE FROM whatsapp_channels WHERE id = $1 AND organization_id = $2 RETURNING id",
     [req.params.id, req.auth!.organizationId]
