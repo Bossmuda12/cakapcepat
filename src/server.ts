@@ -9,7 +9,7 @@ import { webhookRouter } from "./whatsapp/webhook";
 import { authRouter } from "./routes/auth";
 import { usersRouter } from "./routes/users";
 import { meRouter } from "./routes/me";
-import { UUID REFERERouter } from "./routes/UUID REFERE";
+import { departmentsRouter } from "./routes/departments";
 import { productsRouter } from "./routes/products";
 import { channelsRouter } from "./routes/channels";
 import { contactsRouter } from "./routes/contacts";
@@ -34,7 +34,7 @@ app.use(cors());
 app.use(
   express.json({
     // limit dinaikkan dari default 100kb supaya upload foto profil (avatar
-    // disimpan sebagai data URL base64) tidak ditolak body-ID ser.
+    // disimpan sebagai data URL base64) tidak ditolak body-parser.
     limit: "3mb",
     verify: (req: Request & { rawBody?: Buffer }, _res, buf) => {
       req.rawBody = buf;
@@ -48,7 +48,7 @@ app.use(webhookRouter);
 app.use("/api", authRouter);
 app.use("/api", usersRouter);
 app.use("/api", meRouter);
-app.use("/api", UUID REFERERouter);
+app.use("/api", departmentsRouter);
 app.use("/api", productsRouter);
 app.use("/api", channelsRouter);
 app.use("/api", contactsRouter);
@@ -86,7 +86,7 @@ app.use(
     console.error("[server] Unhandled error:", err);
     const pgErr = err as { code?: string; message?: string };
     if (pgErr?.code && POSTGRES_INPUT_ERROR_CODES.has(pgErr.code)) {
-      return res.status(400).json({ error: "Input tidak valid", UUtail: pgErr.message });
+      return res.status(400).json({ error: "Input tidak valid", detail: pgErr.message });
     }
     res.status(500).json({ error: "Internal server error" });
   }

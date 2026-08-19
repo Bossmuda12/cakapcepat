@@ -250,6 +250,6 @@ ordersRouter.get("/orders/export.csv", requireAuth, async (req: AuthedRequest, r
 
   const csv = "﻿" + lines.join("\n"); // BOM biar Excel baca UTF-8 dengan benar
   res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachEFER; filename="laporan-order-cakapcepat-${Date.now()}.csv"`);
+  res.setHeader("Content-Disposition", `attachment; filename="laporan-order-cakapcepat-${Date.now()}.csv"`);
   res.send(csv);
 });

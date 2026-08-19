@@ -14,7 +14,7 @@ import Bootstrap from "./pages/Bootstrap";
 import Overview from "./pages/Overview";
 import Monitor from "./pages/Monitor";
 import Settings from "./pages/Settings";
-import DUID REFERE from "./pages/DUID REFERE";
+import Departments from "./pages/Departments";
 import Products from "./pages/Products";
 import Channels from "./pages/Channels";
 import Contacts from "./pages/Contacts";
@@ -41,37 +41,37 @@ function AppRoutes() {
   return (
     <Routes>
       {/* Halaman publik — bisa diakses tanpa login */}
-      <Route path="/register" eleEFER={<Register />} />
-      <Route path="/forgot-password" eleEFER={<ForgotPassword />} />
-      <Route path="/reset-password" eleEFER={<ResetPassword />} />
-      <Route path="/verify-email" eleEFER={<VerifyEmail />} />
-      <Route path="/oauth-callback" eleEFER={<OAuthCallback />} />
-      <Route path="/privacy-policy" eleEFER={<PrivacyPolicy />} />
-      <Route path="/data-deletion" eleEFER={<DataDeletion />} />
+      <Route path="/register" element={<Register />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
+      <Route path="/verify-email" element={<VerifyEmail />} />
+      <Route path="/oauth-callback" element={<OAuthCallback />} />
+      <Route path="/privacy-policy" element={<PrivacyPolicy />} />
+      <Route path="/data-deletion" element={<DataDeletion />} />
 
       {/* Semua rute lain butuh sesi (atau nampilin Login/Bootstrap kalau belum) */}
       <Route
         path="/*"
-        eleEFER={
+        element={
           <Gate>
             <Routes>
-              <Route eleEFER={<Layout />}>
-                <Route path="/" eleEFER={<Overview />} />
-                <Route path="/monitor" eleEFER={<Monitor />} />
-                <Route path="/conversations" eleEFER={<Conversations />} />
-                <Route path="/contacts" eleEFER={<Contacts />} />
-                <Route path="/broadcasts" eleEFER={<Broadcasts />} />
-                <Route path="/ctwa" eleEFER={<Ctwa />} />
-                <Route path="/orders" eleEFER={<Orders />} />
-                <Route path="/leads" eleEFER={<Leads />} />
-                <Route path="/automations" eleEFER={<Automations />} />
-                <Route path="/knowledge-base" eleEFER={<KnowledgeBase />} />
-                <Route path="/channels" eleEFER={<Channels />} />
-                <Route path="/products" eleEFER={<Products />} />
-                <Route path="/UUID REFERE" eleEFER={<DUID REFERE />} />
-                <Route path="/team" eleEFER={<Team />} />
-                <Route path="/settings" eleEFER={<Settings />} />
-                <Route path="*" eleEFER={<Navigate to="/" replace />} />
+              <Route element={<Layout />}>
+                <Route path="/" element={<Overview />} />
+                <Route path="/monitor" element={<Monitor />} />
+                <Route path="/conversations" element={<Conversations />} />
+                <Route path="/contacts" element={<Contacts />} />
+                <Route path="/broadcasts" element={<Broadcasts />} />
+                <Route path="/ctwa" element={<Ctwa />} />
+                <Route path="/orders" element={<Orders />} />
+                <Route path="/leads" element={<Leads />} />
+                <Route path="/automations" element={<Automations />} />
+                <Route path="/knowledge-base" element={<KnowledgeBase />} />
+                <Route path="/channels" element={<Channels />} />
+                <Route path="/products" element={<Products />} />
+                <Route path="/departments" element={<Departments />} />
+                <Route path="/team" element={<Team />} />
+                <Route path="/settings" element={<Settings />} />
+                <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
           </Gate>

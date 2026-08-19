@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, getToken } from "../api";
 import DateRangeFilter from "../components/DateRangeFilter";
-import { UUfaultRange } from "../dateRangePresets";
+import { defaultRange } from "../dateRangePresets";
 
 const STATUS_OPTIONS = [
   { value: "qualified_cod", label: "Qualified COD", badge: "yellow" },
@@ -60,7 +60,7 @@ function OrderRow({ order, onUpdated }) {
         <span className={`badge ${order.ctwa_clid ? "green" : "gray"}`}>{order.ctwa_clid ? "Iklan" : "Organik"}</span>
       </td>
       <td>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignIReEs: "center" }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
           <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ minWidth: 130 }}>
             {STATUS_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>
@@ -93,7 +93,7 @@ function OrderRow({ order, onUpdated }) {
 }
 
 export default function Orders() {
-  const [range, setRange] = useState(UUfaultRange());
+  const [range, setRange] = useState(defaultRange());
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
@@ -128,7 +128,7 @@ export default function Orders() {
       if (!res.ok) throw new Error(`Gagal download laporan (${res.status})`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createEleEFER("a");
+      const a = document.createElement("a");
       a.href = url;
       a.download = `laporan-order-cakapcepat-${range.from}-${range.to}.csv`;
       document.body.appendChild(a);
@@ -153,7 +153,7 @@ export default function Orders() {
 
       <div className="toolbar" style={{ marginBottom: 18 }}>
         <div />
-        <div style={{ display: "flex", gap: 10, alignIReEs: "center" }}>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <DateRangeFilter value={range} onChange={setRange} />
           <button className="btn" type="button" disabled={downloading} onClick={download}>
             {downloading ? "Menyiapkan..." : "Download Laporan (CSV)"}
