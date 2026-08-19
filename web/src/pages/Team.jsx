@@ -4,6 +4,7 @@ import { useAuth } from "../AuthContext";
 import Modal from "../components/Modal";
 
 const emptyForm = { name: "", email: "", password: "", role: "agent" };
+const emptyEditForm = { name: "", email: "", password: "", role: "agent" };
 
 const ROLE_LABELS = { owner: "Owner", admin: "Admin", agent: "Agent (CS)" };
 
@@ -53,6 +54,15 @@ export default function Team() {
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
+  const [editingRow, setEditingRow] = useState(null); // baris yang lagi diedit, null = modal tertutup
+  const [editForm, setEditForm] = useState(emptyEditForm);
+  const [editError, setEditError] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+
+  const [deletingRow, setDeletingRow] = useState(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
   const canManage = user?.role === "owner" || user?.role === "admin";
 
   const load = async () => {
@@ -82,6 +92,46 @@ export default function Team() {
       setError(err.message);
     } finally {
       setBusy(false);
+    }
+  };
+
+  const openEdit = (row) => {
+    setEditingRow(row);
+    setEditForm({ name: row.name || "", email: row.email || "", password: "", role: row.role });
+    setEditError("");
+  };
+
+  const updateEditForm = (key) => (e) => setEditForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const onEditSubmit = async (e) => {
+    e.preventDefault();
+    setEditBusy(true);
+    setEditError("");
+    try {
+      const payload = { name: editForm.name, email: editForm.email, role: editForm.role };
+      if (editForm.password) payload.password = editForm.password; // kosong = tidak diganti
+      await api.patch(`/users/${editingRow.id}`, payload);
+      setEditingRow(null);
+      await load();
+    } catch (err) {
+      setEditError(err.message);
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deletingRow) return;
+    setDeleteBusy(true);
+    setDeleteError("");
+    try {
+      await api.del(`/users/${deletingRow.id}`);
+      setDeletingRow(null);
+      await load();
+    } catch (err) {
+      setDeleteError(err.message);
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -136,6 +186,74 @@ export default function Team() {
         </form>
       </Modal>
 
+      <Modal open={!!editingRow} onClose={() => setEditingRow(null)} title={`Edit ${editingRow?.name || "anggota tim"}`}>
+        <form onSubmit={onEditSubmit}>
+          {editError && <div className="error-box">{editError}</div>}
+          <div className="field">
+            <label>Nama</label>
+            <input value={editForm.name} onChange={updateEditForm("name")} required />
+          </div>
+          <div className="field">
+            <label>Email</label>
+            <input type="email" value={editForm.email} onChange={updateEditForm("email")} required />
+          </div>
+          <div className="field">
+            <label>Password baru (kosongkan jika tidak diganti)</label>
+            <input
+              type="password"
+              value={editForm.password}
+              onChange={updateEditForm("password")}
+              minLength={8}
+              placeholder="Min. 8 karakter"
+            />
+          </div>
+          <div className="field">
+            <label>Peran</label>
+            <select value={editForm.role} onChange={updateEditForm("role")}>
+              <option value="agent">Agent (CS)</option>
+              <option value="admin">Admin</option>
+              <option value="owner">Owner</option>
+            </select>
+          </div>
+          <button className="btn block" type="submit" disabled={editBusy}>
+            {editBusy ? "Menyimpan..." : "Simpan Perubahan"}
+          </button>
+        </form>
+      </Modal>
+
+      <Modal open={!!deletingRow} onClose={() => setDeletingRow(null)} title="Hapus anggota tim?" width={460}>
+        {deletingRow && (
+          <div>
+            {deleteError && <div className="error-box">{deleteError}</div>}
+            <p style={{ fontSize: 14 }}>
+              Yakin mau menghapus <strong>{deletingRow.name || deletingRow.email}</strong> dari tim? Nomor
+              WhatsApp dan percakapan yang pernah dia pegang tetap aman (cuma dilepas kepemilikannya), tapi
+              akun login-nya akan hilang permanen. Tindakan ini tidak bisa dibatalkan.
+            </p>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ flex: 1 }}
+                onClick={() => setDeletingRow(null)}
+                disabled={deleteBusy}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                style={{ flex: 1 }}
+                onClick={confirmDelete}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? "Menghapus..." : "Ya, Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       {rows === null ? (
         <div className="loading-block">Memuat...</div>
       ) : rows.length === 0 ? (
@@ -183,6 +301,24 @@ export default function Team() {
                   <div className="team-stat-label">Percakapan terbuka</div>
                 </div>
               </div>
+              {canManage && (
+                <div className="team-card-actions">
+                  <button type="button" className="btn-link" onClick={() => openEdit(r)}>
+                    Edit
+                  </button>
+                  {" · "}
+                  <button
+                    type="button"
+                    className="btn-link"
+                    style={{ color: "var(--danger)" }}
+                    disabled={r.id === user?.id}
+                    title={r.id === user?.id ? "Tidak bisa menghapus akun sendiri" : undefined}
+                    onClick={() => setDeletingRow(r)}
+                  >
+                    Hapus
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

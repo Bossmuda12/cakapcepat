@@ -314,3 +314,12 @@ CREATE TABLE IF NOT EXISTS whatsapp_qr_auth_keys (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (channel_id, key_name)
 );
+
+-- conversations.assigned_to sebelumnya TIDAK punya ON DELETE SET NULL —
+-- akibatnya kalau anggota tim yang lagi di-assign ke sebuah percakapan
+-- dihapus, DELETE-nya gagal (foreign key violation) padahal seharusnya
+-- cuma "lepas assign"-nya, bukan blokir hapus user. Diperbaiki di sini
+-- (dipakai fitur "Hapus anggota tim" di halaman Tim).
+ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_assigned_to_fkey;
+ALTER TABLE conversations ADD CONSTRAINT conversations_assigned_to_fkey
+  FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL;

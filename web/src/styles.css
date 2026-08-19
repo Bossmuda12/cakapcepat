@@ -1096,6 +1096,13 @@ tr:last-child td { border-bottom: none; }
 }
 .team-stat-value { font-size: 17px; font-weight: 700; }
 .team-stat-label { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+.team-card-actions {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+  text-align: right;
+}
 
 /* ============================================================================
    Filter tanggal (Hari ini / Kemarin / Minggu ini / Bulan ini / Custom) —
