@@ -20,11 +20,21 @@ export default function Conversations() {
   const [error, setError] = useState("");
   const [sendError, setSendError] = useState("");
   const [sending, setSending] = useState(false);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [ownerFilter, setOwnerFilter] = useState(""); // "" = semua tim; klik nama -> hanya obrolan nomor dia
   const scrollRef = useRef(null);
 
-  const loadConversations = useCallback(async () => {
+  useEffect(() => {
+    api
+      .get("/users")
+      .then(setTeamMembers)
+      .catch(() => {}); // gagal load daftar tim tidak boleh menghalangi halaman utama
+  }, []);
+
+  const loadConversations = useCallback(async (ownerUserId) => {
     try {
-      const data = await api.get("/conversations");
+      const query = ownerUserId ? `?ownerUserId=${ownerUserId}` : "";
+      const data = await api.get(`/conversations${query}`);
       setRows(data);
       return data;
     } catch (err) {
@@ -44,19 +54,22 @@ export default function Conversations() {
   }, []);
 
   useEffect(() => {
-    loadConversations().then((data) => {
-      if (data.length > 0 && !selectedId) setSelectedId(data[0].id);
+    // Ganti filter tim -> daftar percakapan lama sudah tidak relevan, dan
+    // percakapan yang lagi dibuka bisa jadi bukan milik tim yang baru dipilih.
+    setSelectedId(null);
+    loadConversations(ownerFilter).then((data) => {
+      if (data.length > 0) setSelectedId(data[0].id);
     });
     // Polling tetap dipertahankan sebagai fallback kalau koneksi WebSocket putus.
-    const interval = setInterval(loadConversations, 8000);
+    const interval = setInterval(() => loadConversations(ownerFilter), 8000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [ownerFilter]);
 
   // Push real-time: begitu ada pesan/percakapan baru di server, langsung
   // refetch daftar percakapan dan (kalau relevan) thread pesan yang lagi dibuka.
   useRealtime(() => {
-    loadConversations();
+    loadConversations(ownerFilter);
     if (selectedId) loadMessages(selectedId);
   });
 
@@ -82,7 +95,7 @@ export default function Conversations() {
       await api.post(`/conversations/${selectedId}/messages`, { body: draft });
       setDraft("");
       await loadMessages(selectedId);
-      await loadConversations();
+      await loadConversations(ownerFilter);
     } catch (err) {
       setSendError(err.message);
     } finally {
@@ -94,7 +107,7 @@ export default function Conversations() {
     if (!selectedId) return;
     try {
       await api.post(`/conversations/${selectedId}/pipeline`, { stage: "closing_won" });
-      await loadConversations();
+      await loadConversations(ownerFilter);
     } catch (err) {
       setSendError(err.message);
     }
@@ -110,8 +123,30 @@ export default function Conversations() {
     <div>
       <h1>Percakapan</h1>
       <p className="page-subtitle">
-        Inbox WhatsApp. Kirim pesan hanya berhasil kalau nomor WA sudah benar-benar terhubung ke Meta.
+        Inbox WhatsApp semua nomor tim. Klik nama anggota tim di bawah untuk lihat obrolan nomor dia saja.
       </p>
+
+      {teamMembers.length > 0 && (
+        <div className="team-filter-row">
+          <button
+            type="button"
+            className={`team-filter-chip ${ownerFilter === "" ? "active" : ""}`}
+            onClick={() => setOwnerFilter("")}
+          >
+            Semua Tim
+          </button>
+          {teamMembers.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`team-filter-chip ${ownerFilter === m.id ? "active" : ""}`}
+              onClick={() => setOwnerFilter(m.id)}
+            >
+              {m.name || m.email}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && <div className="error-box">{error}</div>}
 
@@ -120,7 +155,9 @@ export default function Conversations() {
           {rows === null ? (
             <div className="loading-block">Memuat...</div>
           ) : rows.length === 0 ? (
-            <div className="empty-state">Belum ada percakapan.</div>
+            <div className="empty-state">
+              {ownerFilter ? "Belum ada percakapan lewat nomor anggota tim ini." : "Belum ada percakapan."}
+            </div>
           ) : (
             rows.map((r) => (
               <button
@@ -136,6 +173,7 @@ export default function Conversations() {
                   <span>{r.wa_number}</span>
                   <span>{formatTime(r.last_message_at)}</span>
                 </div>
+                {r.channel_label && <div className="inbox-list-item-channel">{r.channel_label}</div>}
               </button>
             ))
           )}

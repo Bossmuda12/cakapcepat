@@ -1,4 +1,22 @@
 import "express-async-errors";
+
+// --- Jaring pengaman supaya SATU error internal (paling sering dari Baileys,
+// library koneksi WA QR/pairing) tidak mematikan SELURUH server CakapCepat ---
+// Baileys kadang melempar promise rejection dari operasi internalnya sendiri
+// (retry-request, transaksi sesi, dst) yang tidak bisa ditangkap lewat try/catch
+// biasa di kode kita, karena terjadi di dalam event emitter Baileys. Tanpa
+// handler ini, satu error semacam itu (mis. saat sesi WA tim logout/konflik
+// device) bisa membuat SELURUH proses Node crash & restart — termasuk fitur
+// yang sama sekali tidak berhubungan (order tracking, broadcast, CAPI, dll).
+// Dicatat ke log supaya tetap kelihatan & bisa didiagnosis, tapi proses TIDAK
+// dimatikan. HARUS didaftarkan di baris paling atas, sebelum import lain jalan.
+process.on("unhandledRejection", (reason) => {
+  console.error("[server] Unhandled promise rejection (server tetap jalan):", reason);
+});
+process.on("uncaughtException", (err) => {
+  console.error("[server] Uncaught exception (server tetap jalan):", err);
+});
+
 import path from "node:path";
 import fs from "node:fs";
 import http from "node:http";

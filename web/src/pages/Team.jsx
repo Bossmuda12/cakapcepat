@@ -148,14 +148,23 @@ export default function Team() {
                 <div className="team-avatar" style={{ background: colorForName(r.name) }}>
                   {initialsForName(r.name)}
                   <span
-                    className={`team-status-dot ${r.isActiveToday ? "active" : "inactive"}`}
-                    title={r.isActiveToday ? "Aktif hari ini" : "Belum ada aktivitas hari ini"}
+                    className={`team-status-dot ${r.waOnline ? "active" : "inactive"}`}
+                    title={
+                      r.waOnline
+                        ? "WhatsApp online — nomor tersambung"
+                        : r.waChannels.length === 0
+                        ? "Belum punya nomor WhatsApp"
+                        : "WhatsApp offline — nomor terputus"
+                    }
                   />
                 </div>
                 <PerformanceRing percent={r.performancePercent} />
               </div>
               <div className="team-card-name">{r.name || "—"}</div>
               <div className="team-card-email">{r.email}</div>
+              <div className={`team-wa-status ${r.waOnline ? "online" : "offline"}`}>
+                {r.waOnline ? "● WhatsApp Online" : "● WhatsApp Offline"}
+              </div>
               <div className="team-tags">
                 <span className="badge">{ROLE_LABELS[r.role] || r.role}</span>
                 {r.departments.map((d) => (

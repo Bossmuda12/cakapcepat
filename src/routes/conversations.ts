@@ -4,25 +4,41 @@ import { pool } from "../db/pool";
 import { requireAuth, type AuthedRequest } from "../middleware/auth";
 import { reportConversionToMeta } from "../whatsapp/capi";
 import { sendTextMessage } from "../whatsapp/client";
+import { sendViaQrSession } from "../whatsapp/qrSessionManager";
 import { broadcastToOrg } from "../realtime";
 
 export const conversationsRouter = Router();
 
-// Inbox: daftar percakapan. ?source=ctwa untuk filter yang berasal dari iklan CTWA saja.
+// Inbox: daftar percakapan. ?source=ctwa untuk filter yang berasal dari iklan
+// CTWA saja. ?ownerUserId=<uuid> untuk filter cuma percakapan lewat nomor WA
+// yang dipegang anggota tim tertentu — dipakai owner buat "klik nama tim,
+// lihat cuma obrolan dia" di halaman Percakapan.
 conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest, res) => {
   const ctwaOnly = req.query.source === "ctwa";
+  const ownerUserId = typeof req.query.ownerUserId === "string" ? req.query.ownerUserId : null;
+
+  const params: unknown[] = [req.auth!.organizationId];
+  const clauses = ["c.organization_id = $1"];
+  if (ctwaOnly) clauses.push("conv.ctwa_clid IS NOT NULL");
+  if (ownerUserId) {
+    params.push(ownerUserId);
+    clauses.push(`wc.owner_user_id = $${params.length}`);
+  }
+
   const { rows } = await pool.query(
     `SELECT conv.id, conv.status, conv.assigned_to, conv.ctwa_clid, conv.ad_source_url,
             conv.conversion_reported, conv.last_message_at, conv.channel_id,
             c.wa_number, c.name AS contact_name, c.pipeline_stage,
-            u.name AS assigned_name
+            u.name AS assigned_name,
+            wc.owner_user_id AS channel_owner_id, wc.label AS channel_label
      FROM conversations conv
      JOIN contacts c ON c.id = conv.contact_id
+     JOIN whatsapp_channels wc ON wc.id = conv.channel_id
      LEFT JOIN users u ON u.id = conv.assigned_to
-     WHERE c.organization_id = $1 ${ctwaOnly ? "AND conv.ctwa_clid IS NOT NULL" : ""}
+     WHERE ${clauses.join(" AND ")}
      ORDER BY conv.last_message_at DESC NULLS LAST
      LIMIT 200`,
-    [req.auth!.organizationId]
+    params
   );
   res.json(rows);
 });
@@ -119,14 +135,16 @@ conversationsRouter.get("/conversations/:id/messages", requireAuth, async (req: 
 
 const sendMessageSchema = z.object({ body: z.string().min(1) });
 
-// Kirim balasan manual dari inbox. Hanya jalan kalau nomor WA channel-nya
-// sudah beneran terhubung ke Meta (phone_number_id + access_token valid).
+// Kirim balasan manual dari inbox. Untuk channel Cloud API resmi, jalan kalau
+// nomornya sudah beneran terhubung ke Meta (phone_number_id + access_token
+// valid). Untuk channel QR/pairing, dikirim lewat sesi WA aktif (Baileys) —
+// gagal kalau sesinya sedang tidak tersambung.
 conversationsRouter.post("/conversations/:id/messages", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = sendMessageSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
   const { rows } = await pool.query(
-    `SELECT conv.id, c.wa_number, wc.phone_number_id, wc.access_token
+    `SELECT conv.id, conv.channel_id, c.wa_number, wc.phone_number_id, wc.access_token, wc.connection_type
      FROM conversations conv
      JOIN contacts c ON c.id = conv.contact_id
      JOIN whatsapp_channels wc ON wc.id = conv.channel_id
@@ -137,13 +155,18 @@ conversationsRouter.post("/conversations/:id/messages", requireAuth, async (req:
   if (!convo) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
 
   try {
-    const waRes = await sendTextMessage({
-      to: convo.wa_number,
-      body: parsed.data.body,
-      phoneNumberId: convo.phone_number_id,
-      accessToken: convo.access_token,
-    });
-    const waMessageId = waRes?.messages?.[0]?.id ?? null;
+    let waMessageId: string | null = null;
+    if (convo.connection_type === "qr_session") {
+      await sendViaQrSession(convo.channel_id, convo.wa_number, parsed.data.body);
+    } else {
+      const waRes = await sendTextMessage({
+        to: convo.wa_number,
+        body: parsed.data.body,
+        phoneNumberId: convo.phone_number_id,
+        accessToken: convo.access_token,
+      });
+      waMessageId = waRes?.messages?.[0]?.id ?? null;
+    }
 
     const { rows: msgRows } = await pool.query(
       `INSERT INTO messages (conversation_id, direction, sender_type, sender_user_id, wa_message_id, content_type, content, status)

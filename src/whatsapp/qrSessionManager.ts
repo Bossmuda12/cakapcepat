@@ -197,54 +197,17 @@ export async function startQrSession(
     }
   }
 
-  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("creds.update", () => {
+    saveCreds().catch((err) => console.error(`[qr-session] Gagal simpan creds channel ${channelId}:`, err));
+  });
 
   sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-
-    if (qr && !opts.pairingPhoneNumber) {
-      try {
-        const dataUrl = await QRCode.toDataURL(qr);
-        await updateChannelConnState(channelId, { qr_data_url: dataUrl, connection_state: "qr_pending" });
-      } catch (err) {
-        console.error(`[qr-session] Gagal membuat gambar QR untuk channel ${channelId}:`, err);
-      }
-    }
-
-    if (connection === "open") {
-      const meNumber = sock.user?.id?.split(":")[0]?.split("@")[0] ?? null;
-      await updateChannelConnState(channelId, {
-        connection_state: "connected",
-        status: "connected",
-        qr_data_url: null,
-        pairing_code: null,
-        display_phone_number: meNumber,
-      });
-      console.log(`[qr-session] Channel ${channelId} terhubung ke WhatsApp.`);
-    } else if (connection === "close") {
-      activeSessions.delete(channelId);
-      const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output
-        ?.statusCode;
-      const loggedOut = statusCode === DisconnectReason.loggedOut;
-
-      if (loggedOut) {
-        await updateChannelConnState(channelId, {
-          connection_state: "logged_out",
-          status: "disconnected",
-          qr_data_url: null,
-          pairing_code: null,
-        });
-        await pool.query("DELETE FROM whatsapp_qr_auth_keys WHERE channel_id = $1", [channelId]);
-        console.log(`[qr-session] Channel ${channelId} logout dari HP — perlu scan/pairing ulang.`);
-      } else {
-        await updateChannelConnState(channelId, { connection_state: "reconnecting", status: "disconnected" });
-        console.warn(`[qr-session] Channel ${channelId} terputus, mencoba menyambung ulang dalam 3 detik...`);
-        setTimeout(() => {
-          startQrSession(channelId, organizationId).catch((err) =>
-            console.error(`[qr-session] Gagal menyambung ulang channel ${channelId}:`, err)
-          );
-        }, 3000);
-      }
+    try {
+      await handleConnectionUpdate(sock, channelId, organizationId, opts, update);
+    } catch (err) {
+      // Jaring pengaman per-channel — lihat juga process.on('unhandledRejection', ...)
+      // di server.ts untuk error internal Baileys yang tidak lewat handler ini sama sekali.
+      console.error(`[qr-session] Gagal memproses connection.update channel ${channelId}:`, err);
     }
   });
 
@@ -258,6 +221,61 @@ export async function startQrSession(
       }
     }
   });
+}
+
+async function handleConnectionUpdate(
+  sock: WASocket,
+  channelId: string,
+  organizationId: string,
+  opts: StartOptions,
+  update: Partial<import("@whiskeysockets/baileys").ConnectionState>
+) {
+  const { connection, lastDisconnect, qr } = update;
+
+  if (qr && !opts.pairingPhoneNumber) {
+    try {
+      const dataUrl = await QRCode.toDataURL(qr);
+      await updateChannelConnState(channelId, { qr_data_url: dataUrl, connection_state: "qr_pending" });
+    } catch (err) {
+      console.error(`[qr-session] Gagal membuat gambar QR untuk channel ${channelId}:`, err);
+    }
+  }
+
+  if (connection === "open") {
+    const meNumber = sock.user?.id?.split(":")[0]?.split("@")[0] ?? null;
+    await updateChannelConnState(channelId, {
+      connection_state: "connected",
+      status: "connected",
+      qr_data_url: null,
+      pairing_code: null,
+      display_phone_number: meNumber,
+    });
+    console.log(`[qr-session] Channel ${channelId} terhubung ke WhatsApp.`);
+  } else if (connection === "close") {
+    activeSessions.delete(channelId);
+    const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output
+      ?.statusCode;
+    const loggedOut = statusCode === DisconnectReason.loggedOut;
+
+    if (loggedOut) {
+      await updateChannelConnState(channelId, {
+        connection_state: "logged_out",
+        status: "disconnected",
+        qr_data_url: null,
+        pairing_code: null,
+      });
+      await pool.query("DELETE FROM whatsapp_qr_auth_keys WHERE channel_id = $1", [channelId]);
+      console.log(`[qr-session] Channel ${channelId} logout dari HP — perlu scan/pairing ulang.`);
+    } else {
+      await updateChannelConnState(channelId, { connection_state: "reconnecting", status: "disconnected" });
+      console.warn(`[qr-session] Channel ${channelId} terputus, mencoba menyambung ulang dalam 3 detik...`);
+      setTimeout(() => {
+        startQrSession(channelId, organizationId).catch((err) =>
+          console.error(`[qr-session] Gagal menyambung ulang channel ${channelId}:`, err)
+        );
+      }, 3000);
+    }
+  }
 }
 
 async function handleIncomingBaileysMessage(
@@ -324,6 +342,23 @@ export async function disconnectQrSession(channelId: string): Promise<void> {
     qr_data_url: null,
     pairing_code: null,
   });
+}
+
+/**
+ * Kirim pesan teks lewat sesi QR/pairing yang lagi aktif — dipakai halaman
+ * Percakapan supaya balas manual dari dashboard tetap jalan untuk nomor tim
+ * (bukan cuma nomor Cloud API resmi). Melempar error kalau sesinya sedang
+ * tidak tersambung (mis. belum di-scan lagi setelah logout).
+ */
+export async function sendViaQrSession(channelId: string, waNumber: string, text: string): Promise<void> {
+  const active = activeSessions.get(channelId);
+  if (!active) {
+    throw new Error(
+      "Sesi WhatsApp (QR/pairing) nomor ini sedang tidak tersambung — sambungkan ulang dari halaman Nomor WhatsApp."
+    );
+  }
+  const jid = waNumber.includes("@") ? waNumber : `${waNumber}@s.whatsapp.net`;
+  await active.sock.sendMessage(jid, { text });
 }
 
 /**

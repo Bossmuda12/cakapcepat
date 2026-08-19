@@ -70,6 +70,29 @@ teamRouter.get("/team/performance", requireAuth, async (req: AuthedRequest, res)
     openByUser.set(row.user_id, Number(row.open_count));
   }
 
+  // Status online/offline WA NYATA per anggota tim — bukan cuma "ada aktivitas
+  // hari ini", tapi apakah nomor WA yang dia pegang beneran tersambung SEKARANG
+  // (Cloud API: status='connected'; QR/pairing: connection_state='connected').
+  // Kalau 1 orang pegang lebih dari 1 nomor, dianggap online kalau SALAH SATU
+  // nomornya tersambung.
+  const { rows: channelRows } = await pool.query(
+    `SELECT owner_user_id AS user_id, connection_type, status, connection_state, label
+     FROM whatsapp_channels
+     WHERE organization_id = $1 AND owner_user_id IS NOT NULL`,
+    [organizationId]
+  );
+  const onlineByUser = new Map<string, boolean>();
+  const channelsByUser = new Map<string, { label: string | null; online: boolean }[]>();
+  for (const row of channelRows) {
+    const online =
+      row.connection_type === "qr_session" ? row.connection_state === "connected" : row.status === "connected";
+    if (online) onlineByUser.set(row.user_id, true);
+    else if (!onlineByUser.has(row.user_id)) onlineByUser.set(row.user_id, false);
+    const list = channelsByUser.get(row.user_id) ?? [];
+    list.push({ label: row.label, online });
+    channelsByUser.set(row.user_id, list);
+  }
+
   const result = users.map((u) => {
     const stat = statByUser.get(u.id) ?? { messagesToday: 0, lastActiveAt: null };
     const percent = Math.max(0, Math.min(100, Math.round((stat.messagesToday / DAILY_MESSAGE_TARGET) * 100)));
@@ -85,6 +108,8 @@ teamRouter.get("/team/performance", requireAuth, async (req: AuthedRequest, res)
       openConversations: openByUser.get(u.id) ?? 0,
       isActiveToday: stat.messagesToday > 0,
       lastActiveAt: stat.lastActiveAt,
+      waOnline: onlineByUser.get(u.id) ?? false,
+      waChannels: channelsByUser.get(u.id) ?? [],
     };
   });
 
