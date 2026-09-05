@@ -23,8 +23,12 @@ import Broadcasts from "./pages/Broadcasts";
 import Team from "./pages/Team";
 import Ctwa from "./pages/Ctwa";
 import Orders from "./pages/Orders";
+import OrdersList from "./pages/OrdersList";
 import Leads from "./pages/Leads";
 import Automations from "./pages/Automations";
+import Automation from "./pages/Automation";
+import FollowUps from "./pages/FollowUps";
+import Courier from "./pages/Courier";
 import KnowledgeBase from "./pages/KnowledgeBase";
 
 function Gate({ children }) {
@@ -63,8 +67,12 @@ function AppRoutes() {
                 <Route path="/broadcasts" element={<Broadcasts />} />
                 <Route path="/ctwa" element={<Ctwa />} />
                 <Route path="/orders" element={<Orders />} />
+                <Route path="/orders-list" element={<OrdersList />} />
                 <Route path="/leads" element={<Leads />} />
                 <Route path="/automations" element={<Automations />} />
+                <Route path="/automation" element={<Automation />} />
+                <Route path="/followups" element={<FollowUps />} />
+                <Route path="/courier" element={<Courier />} />
                 <Route path="/knowledge-base" element={<KnowledgeBase />} />
                 <Route path="/channels" element={<Channels />} />
                 <Route path="/products" element={<Products />} />

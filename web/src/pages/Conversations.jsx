@@ -292,6 +292,11 @@ export default function Conversations() {
               >
                 <div className="inbox-list-item-top">
                   <span className="name">{r.contact_name || r.wa_number}</span>
+                  {r.needs_attention && (
+                    <span className="badge red" title={r.attention_reason || "Butuh perhatian"}>
+                      !
+                    </span>
+                  )}
                   {r.ctwa_clid && <span className="badge yellow">Iklan</span>}
                 </div>
                 <div className="inbox-list-item-bottom">
@@ -340,6 +345,13 @@ export default function Conversations() {
                   <div className="meta">
                     {selected.wa_number} · {statusBadge(selected.status)}
                     {selected.ctwa_clid && <span className="badge yellow"> Dari iklan CTWA</span>}
+                    {selected.needs_attention && (
+                      <span className="badge red" title={selected.attention_reason || ""}>
+                        {" "}
+                        Butuh Perhatian{selected.attention_reason ? `: ${selected.attention_reason}` : ""}
+                      </span>
+                    )}
+                    {selected.ai_paused && <span className="badge gray"> AI Dijeda</span>}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -362,6 +374,12 @@ export default function Conversations() {
                 </div>
               </div>
 
+              {selected.ai_summary && (
+                <div className="ai-summary-box">
+                  <strong>Ringkasan AI:</strong> {selected.ai_summary}
+                </div>
+              )}
+
               <div className="inbox-messages" ref={scrollRef}>
                 {messages.length === 0 ? (
                   <div className="empty-state">Belum ada pesan.</div>
@@ -381,8 +399,31 @@ export default function Conversations() {
                           Hapus
                         </button>
                       )}
-                      <div className={`bubble ${m.direction === "outbound" ? "out" : "in"}`}>
-                        <div className="bubble-text">{m.content?.body}</div>
+                      <div
+                        className={`bubble ${m.direction === "outbound" ? "out" : "in"} ${
+                          m.status === "draft" ? "draft" : ""
+                        }`}
+                      >
+                        {m.status === "draft" && <div className="bubble-draft-label">Menunggu persetujuan</div>}
+                        {m.media_url && (
+                          <div className="bubble-media">
+                            {m.media_type === "image" || m.media_type === "sticker" ? (
+                              <img src={m.media_url} alt="" />
+                            ) : m.media_type === "video" ? (
+                              <video src={m.media_url} controls />
+                            ) : m.media_type === "audio" ? (
+                              <audio src={m.media_url} controls />
+                            ) : (
+                              <a href={m.media_url} target="_blank" rel="noreferrer" className="bubble-media-doc">
+                                📎 Lihat/unduh dokumen
+                              </a>
+                            )}
+                            {m.transcript && <div className="bubble-transcript">"{m.transcript}"</div>}
+                          </div>
+                        )}
+                        {m.content?.body && m.content.body !== m.transcript && (
+                          <div className="bubble-text">{m.content.body}</div>
+                        )}
                         <div className="bubble-meta">
                           {m.sender_type === "ai" ? "AI · " : ""}
                           {formatTime(m.created_at)}

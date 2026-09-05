@@ -59,6 +59,51 @@ export async function sendTemplateMessage({
   });
 }
 
+interface SendImageParams {
+  phoneNumberId: string;
+  accessToken: string;
+  to: string;
+  /**
+   * WAJIB url PUBLIK yang bisa diakses server Meta (bukan path lokal/relatif
+   * seperti media_url hasil saveIncomingMedia di media.ts) — kalau sumbernya
+   * berkas lokal, gabungkan dulu dengan base URL publik server API (di luar
+   * wewenang berkas ini menambahkan config-nya, lihat config.ts) sebelum
+   * dipanggil di sini.
+   */
+  imageUrl: string;
+  caption?: string;
+}
+
+interface SendDocumentParams {
+  phoneNumberId: string;
+  accessToken: string;
+  to: string;
+  /** Sama seperti imageUrl di atas — wajib url publik, bukan path lokal. */
+  documentUrl: string;
+  caption?: string;
+  filename?: string;
+}
+
+/** F-32: kirim foto keluar (mis. katalog produk, bukti resi) lewat Cloud API resmi. */
+export async function sendImage({ phoneNumberId, accessToken, to, imageUrl, caption }: SendImageParams) {
+  return callGraphApi(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp",
+    to,
+    type: "image",
+    image: { link: imageUrl, caption },
+  });
+}
+
+/** F-32: kirim dokumen keluar (mis. invoice PDF) lewat Cloud API resmi. */
+export async function sendDocument({ phoneNumberId, accessToken, to, documentUrl, caption, filename }: SendDocumentParams) {
+  return callGraphApi(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp",
+    to,
+    type: "document",
+    document: { link: documentUrl, caption, filename },
+  });
+}
+
 interface WhatsAppSendResult {
   messaging_product?: string;
   contacts?: { input: string; wa_id: string }[];

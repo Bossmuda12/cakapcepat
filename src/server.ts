@@ -41,6 +41,11 @@ import { knowledgeBaseRouter } from "./routes/knowledgeBase";
 import { leadsRouter } from "./routes/leads";
 import { teamRouter } from "./routes/team";
 import { statsRouter } from "./routes/stats";
+import { categoriesRouter } from "./routes/categories";
+import { variantsRouter } from "./routes/variants";
+import { courierRouter } from "./routes/courier";
+import { groupsRouter } from "./routes/groups";
+import { followupsRouter } from "./routes/followups";
 import { initRealtime } from "./realtime";
 import { initScheduler } from "./scheduler";
 import { resumeAllQrSessions } from "./whatsapp/qrSessionManager";
@@ -82,6 +87,20 @@ app.use("/api", knowledgeBaseRouter);
 app.use("/api", leadsRouter);
 app.use("/api", teamRouter);
 app.use("/api", statsRouter);
+app.use("/api", categoriesRouter);
+app.use("/api", variantsRouter);
+app.use("/api", courierRouter);
+app.use("/api", groupsRouter);
+app.use("/api", followupsRouter);
+
+// F-33: berkas media dari pelanggan (foto alamat, bukti transfer, voice note)
+// disimpan di uploads/media/<organizationId>/ dan disajikan lewat /uploads
+// supaya bisa dibuka & didengarkan langsung dari halaman Percakapan.
+// Catatan: di Railway, folder ini ikut hilang saat redeploy kecuali dipasang
+// volume — untuk sekarang media lama bisa hilang, tapi catatan pesannya tetap
+// ada di database. Pasang Railway Volume ke /app/uploads kalau media harus awet.
+const uploadsDir = path.join(process.cwd(), "uploads");
+app.use("/uploads", express.static(uploadsDir));
 
 // Dashboard web (React, di-build ke folder public/) — disajikan langsung
 // dari service backend yang sama, supaya nggak perlu deploy terpisah.

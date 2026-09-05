@@ -82,6 +82,8 @@ conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest
   const { rows } = await pool.query(
     `SELECT conv.id, conv.status, conv.assigned_to, conv.ctwa_clid, conv.ad_source_url,
             conv.conversion_reported, conv.last_message_at, conv.channel_id, conv.product_id,
+            conv.needs_attention, conv.attention_reason, conv.attention_at,
+            conv.ai_paused, conv.ai_summary, conv.ai_summary_at, conv.order_status,
             c.wa_number, c.name AS contact_name, c.pipeline_stage,
             u.name AS assigned_name,
             wc.owner_user_id AS channel_owner_id, wc.label AS channel_label
@@ -181,7 +183,8 @@ conversationsRouter.get("/conversations/:id/messages", requireAuth, async (req: 
   if (!convoRows[0]) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
 
   const { rows } = await pool.query(
-    `SELECT id, direction, sender_type, content_type, content, status, created_at
+    `SELECT id, direction, sender_type, content_type, content, status, created_at,
+            media_type, media_mime, media_url, media_size, transcript, transcribed_at
      FROM messages WHERE conversation_id = $1 ORDER BY created_at ASC LIMIT 500`,
     [req.params.id]
   );
@@ -237,6 +240,123 @@ conversationsRouter.post("/conversations/:id/messages", requireAuth, async (req:
     res.status(502).json({ error: message });
   }
 });
+
+/**
+ * F-7: AMBIL ALIH MANUAL. Owner menekan tombol "Ambil Alih" di satu percakapan
+ * dan AI langsung berhenti membalas percakapan itu saja — tanpa mematikan AI
+ * untuk pelanggan lain. Kolom yang sama juga diset otomatis oleh pagar
+ * pengaman (src/ai/guardrails.ts) saat pelanggan menyebut refund/komplain/dll.
+ */
+conversationsRouter.post("/conversations/:id/ai-pause", requireAuth, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    `UPDATE conversations conv SET ai_paused = true, ai_paused_by = $3,
+            needs_attention = true,
+            attention_reason = COALESCE(conv.attention_reason, 'Diambil alih manual'),
+            attention_at = COALESCE(conv.attention_at, now())
+     FROM contacts c
+     WHERE conv.contact_id = c.id AND conv.id = $1 AND c.organization_id = $2
+     RETURNING conv.id, conv.ai_paused, conv.needs_attention, conv.attention_reason`,
+    [req.params.id, req.auth!.organizationId, req.auth!.userId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  res.json(rows[0]);
+});
+
+/** F-7: kembalikan percakapan ke AI, sekaligus bersihkan tanda "butuh perhatian". */
+conversationsRouter.post("/conversations/:id/ai-resume", requireAuth, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    `UPDATE conversations conv SET ai_paused = false, ai_paused_by = NULL,
+            needs_attention = false, attention_reason = NULL, attention_at = NULL
+     FROM contacts c
+     WHERE conv.contact_id = c.id AND conv.id = $1 AND c.organization_id = $2
+     RETURNING conv.id, conv.ai_paused, conv.needs_attention`,
+    [req.params.id, req.auth!.organizationId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  res.json(rows[0]);
+});
+
+/**
+ * MODE PERSETUJUAN (whatsapp_channels.ai_approval_mode): balasan AI disimpan
+ * sebagai pesan berstatus 'draft' dan TIDAK terkirim sampai manusia menyetujui
+ * di sini. Sangat disarankan menyala 1-2 minggu pertama — di situlah AI paling
+ * sering meleset dan paling butuh dikoreksi.
+ *
+ * Body opsional { body } untuk menyunting teksnya dulu sebelum dikirim.
+ */
+const approveDraftSchema = z.object({ body: z.string().min(1).optional() });
+
+conversationsRouter.post(
+  "/conversations/:id/messages/:messageId/approve",
+  requireAuth,
+  async (req: AuthedRequest, res) => {
+    const parsed = approveDraftSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { rows } = await pool.query(
+      `SELECT m.id, m.content, conv.channel_id, c.wa_number,
+              wc.phone_number_id, wc.access_token, wc.connection_type
+       FROM messages m
+       JOIN conversations conv ON conv.id = m.conversation_id
+       JOIN contacts c ON c.id = conv.contact_id
+       JOIN whatsapp_channels wc ON wc.id = conv.channel_id
+       WHERE m.id = $1 AND m.conversation_id = $2 AND c.organization_id = $3 AND m.status = 'draft'`,
+      [req.params.messageId, req.params.id, req.auth!.organizationId]
+    );
+    const draft = rows[0];
+    if (!draft) return res.status(404).json({ error: "Draf balasan tidak ditemukan atau sudah diproses" });
+
+    const body = parsed.data.body ?? draft.content?.body ?? "";
+    if (!body) return res.status(400).json({ error: "Isi balasan kosong" });
+
+    try {
+      let waMessageId: string | null = null;
+      if (draft.connection_type === "qr_session") {
+        await sendViaQrSession(draft.channel_id, draft.wa_number, body);
+      } else {
+        const waRes = await sendTextMessage({
+          to: draft.wa_number,
+          body,
+          phoneNumberId: draft.phone_number_id,
+          accessToken: draft.access_token,
+        });
+        waMessageId = waRes?.messages?.[0]?.id ?? null;
+      }
+
+      const { rows: updated } = await pool.query(
+        `UPDATE messages SET status = 'sent', content = $2, wa_message_id = COALESCE(wa_message_id, $3),
+                sender_user_id = $4
+         WHERE id = $1
+         RETURNING id, direction, sender_type, content_type, content, status, created_at`,
+        [req.params.messageId, JSON.stringify({ body }), waMessageId, req.auth!.userId]
+      );
+      await pool.query("UPDATE conversations SET last_message_at = now() WHERE id = $1", [req.params.id]);
+      broadcastToOrg(req.auth!.organizationId, { type: "message", conversationId: req.params.id });
+      res.json(updated[0]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Gagal mengirim balasan";
+      res.status(502).json({ error: message });
+    }
+  }
+);
+
+/** Tolak draf balasan AI — pesannya ditandai 'rejected', tidak pernah terkirim. */
+conversationsRouter.post(
+  "/conversations/:id/messages/:messageId/reject",
+  requireAuth,
+  async (req: AuthedRequest, res) => {
+    const { rows } = await pool.query(
+      `UPDATE messages m SET status = 'rejected'
+       FROM conversations conv, contacts c
+       WHERE m.conversation_id = conv.id AND conv.contact_id = c.id
+         AND m.id = $1 AND m.conversation_id = $2 AND c.organization_id = $3 AND m.status = 'draft'
+       RETURNING m.id, m.status`,
+      [req.params.messageId, req.params.id, req.auth!.organizationId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Draf balasan tidak ditemukan atau sudah diproses" });
+    res.json(rows[0]);
+  }
+);
 
 const assignSchema = z.object({ userId: z.string().uuid() });
 

@@ -54,6 +54,14 @@ export const config = {
     accessToken: process.env.META_CAPI_ACCESS_TOKEN ?? "",
   },
 
+  // Transkrip voice note (F-31). Kalau kosong, voice note tetap TERSIMPAN dan
+  // bisa didengarkan di dashboard, cuma tidak otomatis jadi teks untuk AI.
+  openaiApiKey: process.env.OPENAI_API_KEY ?? "",
+
+  // Rahasia untuk endpoint webhook kurir (F-16). Kalau kosong, webhook selalu
+  // ditolak — aman secara default.
+  courierWebhookSecret: process.env.COURIER_WEBHOOK_SECRET ?? "",
+
   ai: {
     apiKey: process.env.AI_PROVIDER_API_KEY ?? "",
     model: process.env.AI_MODEL ?? "claude-haiku-4-5-20251001",

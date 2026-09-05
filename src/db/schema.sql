@@ -438,3 +438,323 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wa_message_id ON messages(wa_mess
 -- ============================================================================
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_conversations_product ON conversations(product_id);
+
+-- ############################################################################
+-- GELOMBANG FITUR OTOMATISASI (F-1 s/d F-41)
+-- Semua blok di bawah idempotent — schema.sql dijalankan ulang tiap deploy.
+-- ############################################################################
+
+-- ============================================================================
+-- F-KATEGORI: Produk tiga lapis — Kategori > Produk > Varian.
+-- Alasannya bukan cuma tombol filter: pengetahuan AI ikut berlapis, jadi
+-- materi "cara COD" ditulis sekali di lapis toko, "cara rawat parfum" sekali
+-- di lapis kategori, dan hanya harga/aroma/stok yang ditulis per produk.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS product_categories (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  name            TEXT NOT NULL,
+  description     TEXT,
+  sort_order      INT NOT NULL DEFAULT 0,
+  is_active       BOOLEAN NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_product_categories_org ON product_categories(organization_id);
+
+ALTER TABLE products ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES product_categories(id) ON DELETE SET NULL;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS description TEXT;
+-- Harga disimpan dalam SEN (integer) supaya tidak ada galat pembulatan desimal.
+-- RM189.00 disimpan sebagai 18900.
+ALTER TABLE products ADD COLUMN IF NOT EXISTS price_cents BIGINT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS currency TEXT NOT NULL DEFAULT 'MYR';
+ALTER TABLE products ADD COLUMN IF NOT EXISTS sku TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS image_url TEXT;
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category_id);
+CREATE INDEX IF NOT EXISTS idx_products_org ON products(organization_id);
+
+CREATE TABLE IF NOT EXISTS product_variants (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  product_id  UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+  name        TEXT NOT NULL,            -- mis. "50ml", "Saiz 9"
+  price_cents BIGINT,                   -- kalau NULL, pakai harga produk induk
+  sku         TEXT,
+  stock       INT,                      -- NULL = tidak dilacak
+  is_active   BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_product_variants_product ON product_variants(product_id);
+
+-- Knowledge base ikut berlapis: entry boleh menempel ke kategori (berlaku untuk
+-- semua produk di kategori itu), ke produk, atau tidak keduanya (materi umum toko).
+ALTER TABLE knowledge_base_entries ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES product_categories(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_kb_category ON knowledge_base_entries(category_id);
+CREATE INDEX IF NOT EXISTS idx_kb_product ON knowledge_base_entries(product_id);
+
+-- ============================================================================
+-- F-11: Tabel PESANAN sungguhan. Sebelumnya "order" cuma label status yang
+-- menempel di percakapan — tidak ada nama pembeli, alamat, resi, kurir.
+-- Akibatnya email kurir berisi resi tidak bisa dicocokkan ke siapa pun.
+--
+-- DUA LABEL TERPISAH (keputusan pemilik, 6 Sep 2026):
+--   sales_status    = hasil chat      (qualified_cod/closing/cancelled/spam/...)
+--   shipping_status = hasil pengiriman (pending/packed/shipped/problem/returned/delivered)
+-- Dipisah supaya satu pesanan bisa "closing" DAN "retur" sekaligus — kalau
+-- disatukan, angka closing turun surut tiap ada retur dan tingkat retur
+-- mustahil dihitung.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS orders (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  contact_id      UUID REFERENCES contacts(id) ON DELETE SET NULL,
+  channel_id      UUID REFERENCES whatsapp_channels(id) ON DELETE SET NULL,
+  product_id      UUID REFERENCES products(id) ON DELETE SET NULL,
+  variant_id      UUID REFERENCES product_variants(id) ON DELETE SET NULL,
+
+  -- Data pembeli (dikumpulkan AI saat closing, boleh disunting manual)
+  customer_name   TEXT,
+  customer_phone  TEXT,
+  address_line    TEXT,
+  postcode        TEXT,
+  city            TEXT,
+  state           TEXT,
+  country         TEXT DEFAULT 'MY',
+
+  quantity        INT NOT NULL DEFAULT 1,
+  unit_price_cents BIGINT,
+  total_cents     BIGINT,
+  currency        TEXT NOT NULL DEFAULT 'MYR',
+
+  -- Label A — hasil chat
+  sales_status    TEXT NOT NULL DEFAULT 'closing',
+  -- Label B — status pengiriman
+  shipping_status TEXT NOT NULL DEFAULT 'pending',
+  -- Penanda "bermasalah" sengaja BUKAN status, tapi bendera + alasan: paket
+  -- bisa bermasalah hari ini lalu jalan lagi besok, dan riwayatnya harus tetap ada.
+  has_problem     BOOLEAN NOT NULL DEFAULT false,
+  problem_reason  TEXT,
+  problem_at      TIMESTAMPTZ,
+
+  courier         TEXT,
+  tracking_no     TEXT,
+  shipped_at      TIMESTAMPTZ,
+  delivered_at    TIMESTAMPTZ,
+  returned_at     TIMESTAMPTZ,
+
+  cod_received    BOOLEAN NOT NULL DEFAULT false,
+  cod_amount_cents BIGINT,
+  cod_received_at TIMESTAMPTZ,
+
+  -- Anti-dobel untuk rekap ke grup WhatsApp & pesan otomatis paket bermasalah
+  group_reported_at   TIMESTAMPTZ,
+  problem_notified_at TIMESTAMPTZ,
+
+  notes           TEXT,
+  created_by      UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Satu resi hanya boleh dipakai satu pesanan per organisasi — ini yang membuat
+-- pencocokan email kurir -> pembeli tidak pernah salah orang.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_tracking ON orders(organization_id, tracking_no) WHERE tracking_no IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_orders_org_created ON orders(organization_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_orders_conversation ON orders(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_orders_shipping_status ON orders(organization_id, shipping_status);
+CREATE INDEX IF NOT EXISTS idx_orders_product ON orders(product_id);
+
+-- Riwayat perubahan status pesanan (untuk audit & laporan)
+CREATE TABLE IF NOT EXISTS order_events (
+  id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  order_id    UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  field       TEXT NOT NULL,          -- sales_status | shipping_status | has_problem | cod_received
+  old_value   TEXT,
+  new_value   TEXT,
+  source      TEXT NOT NULL DEFAULT 'manual', -- manual | ai | courier_email | courier_webhook
+  note        TEXT,
+  actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_order_events_order ON order_events(order_id, created_at DESC);
+
+-- ============================================================================
+-- F-15/F-16: Jejak email/webhook kurir yang sudah diproses. Kurir mengirim
+-- email berulang untuk resi yang sama; tanpa tabel ini pembeli bisa dikirimi
+-- pesan "paket ditolak" tiga kali.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS courier_events (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  courier         TEXT,
+  tracking_no     TEXT NOT NULL,
+  raw_status      TEXT,                -- teks status apa adanya dari kurir
+  mapped_status   TEXT,                -- shipping_status hasil pemetaan
+  source          TEXT NOT NULL DEFAULT 'email', -- email | webhook | manual
+  source_ref      TEXT,                -- message-id email / id event webhook
+  order_id        UUID REFERENCES orders(id) ON DELETE SET NULL,
+  processed_at    TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_courier_events_ref ON courier_events(organization_id, source, source_ref) WHERE source_ref IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_courier_events_tracking ON courier_events(organization_id, tracking_no);
+
+-- ============================================================================
+-- F-3 Persona per nomor + F-37 pembatas kirim per nomor.
+-- Persona ikut NOMOR (mis. "Rina"), pengetahuan ikut PRODUK — supaya satu CS
+-- virtual bisa melayani banyak produk tanpa gaya bicaranya berubah-ubah.
+-- ============================================================================
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS persona_name TEXT;
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS persona_prompt TEXT;
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT false;
+-- Mode persetujuan: AI menyusun balasan, manusia menyetujui sebelum terkirim.
+-- Sangat disarankan menyala 1-2 minggu pertama.
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS ai_approval_mode BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS hourly_send_limit INT NOT NULL DEFAULT 120;
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS last_disconnect_notified_at TIMESTAMPTZ;
+
+-- F-4 Balas seperti manusia + jam kerja per nomor
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS humanize_enabled BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS work_hour_start INT NOT NULL DEFAULT 9;
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS work_hour_end INT NOT NULL DEFAULT 22;
+
+-- F-37 penghitung kirim per nomor per jam (jendela geser sederhana)
+CREATE TABLE IF NOT EXISTS channel_send_counters (
+  channel_id  UUID NOT NULL REFERENCES whatsapp_channels(id) ON DELETE CASCADE,
+  hour_bucket TIMESTAMPTZ NOT NULL,     -- date_trunc('hour', now())
+  sent_count  INT NOT NULL DEFAULT 0,
+  PRIMARY KEY (channel_id, hour_bucket)
+);
+
+-- ============================================================================
+-- F-6/F-7: Pagar pengaman AI & ambil alih manual.
+-- ============================================================================
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS needs_attention BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS attention_reason TEXT;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS attention_at TIMESTAMPTZ;
+-- ai_paused = AI dikunci untuk percakapan ini (dipicu pagar pengaman ATAU
+-- ditekan manual oleh owner lewat tombol "Ambil Alih").
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_paused BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_paused_by UUID REFERENCES users(id) ON DELETE SET NULL;
+-- F-10 ringkasan otomatis supaya owner tidak perlu membaca seluruh chat
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_summary TEXT;
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS ai_summary_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_conversations_attention ON conversations(needs_attention) WHERE needs_attention = true;
+
+-- Daftar pemicu yang mengunci AI dan menandai "butuh perhatian".
+CREATE TABLE IF NOT EXISTS ai_guardrails (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  keyword         TEXT NOT NULL,        -- dicocokkan tidak peka huruf besar/kecil
+  reason          TEXT NOT NULL,
+  pause_ai        BOOLEAN NOT NULL DEFAULT true,
+  is_active       BOOLEAN NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_guardrails_org ON ai_guardrails(organization_id) WHERE is_active = true;
+
+-- ============================================================================
+-- F-5: Ingatan anti-ulang. AI cenderung memakai pembuka yang sama
+-- ("Baik kak, terima kasih sudah menghubungi...") — 50 chat dengan pembuka
+-- identik tetap terbaca sebagai bot walau isinya berbeda.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS ai_opener_history (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  channel_id      UUID REFERENCES whatsapp_channels(id) ON DELETE CASCADE,
+  opener          TEXT NOT NULL,        -- kalimat pembuka yang sudah dipakai
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_opener_recent ON ai_opener_history(organization_id, channel_id, created_at DESC);
+
+-- ============================================================================
+-- F-9: Batas biaya AI & model bertingkat.
+-- Model kecil untuk klasifikasi (tiap pesan), model besar hanya untuk menjawab.
+-- ============================================================================
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_model_small TEXT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_daily_budget_cents BIGINT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_spend_date DATE;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS ai_spend_cents BIGINT NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS ai_usage_log (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  purpose         TEXT NOT NULL,        -- reply | classify | detect_product | summarize | followup
+  model           TEXT,
+  input_tokens    INT,
+  output_tokens   INT,
+  cost_cents      BIGINT NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_org_date ON ai_usage_log(organization_id, created_at DESC);
+
+-- ============================================================================
+-- F-19 s/d F-22: Grup closingan & laporan.
+-- ============================================================================
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS closing_group_jid TEXT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS closing_group_name TEXT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS closing_group_channel_id UUID REFERENCES whatsapp_channels(id) ON DELETE SET NULL;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS group_report_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS group_daily_summary_enabled BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS last_group_summary_at TIMESTAMPTZ;
+-- F-22: nomor pengirim laporan harian dipilih eksplisit (sebelumnya asal ambil
+-- "channel pertama yang connected")
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS daily_report_channel_id UUID REFERENCES whatsapp_channels(id) ON DELETE SET NULL;
+
+-- ============================================================================
+-- F-25 s/d F-28: Follow-up berjadwal.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS follow_ups (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  conversation_id UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  channel_id      UUID REFERENCES whatsapp_channels(id) ON DELETE SET NULL,
+  attempt         INT NOT NULL DEFAULT 1,   -- 1 = H+1, 2 = H+3, 3 = H+7
+  scheduled_at    TIMESTAMPTZ NOT NULL,
+  status          TEXT NOT NULL DEFAULT 'scheduled', -- scheduled | sent | cancelled | failed
+  sent_at         TIMESTAMPTZ,
+  message_text    TEXT,
+  cancel_reason   TEXT,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Satu percakapan hanya boleh punya satu follow-up terjadwal per percobaan.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_follow_ups_conv_attempt ON follow_ups(conversation_id, attempt);
+CREATE INDEX IF NOT EXISTS idx_follow_ups_due ON follow_ups(scheduled_at) WHERE status = 'scheduled';
+
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS followup_enabled BOOLEAN NOT NULL DEFAULT false;
+-- Batas percobaan: kirim berulang ke orang yang tidak membalas adalah cara
+-- tercepat dilaporkan spam dan nomor diblokir.
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS followup_max_attempts INT NOT NULL DEFAULT 3;
+
+-- ============================================================================
+-- F-30 s/d F-33: Media & voice note. Sebelumnya pesan yang tidak berisi teks
+-- DIBUANG total (kode berhenti kalau textBody kosong) — foto alamat, bukti
+-- transfer, dan voice note pelanggan hilang tanpa jejak.
+-- ============================================================================
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type TEXT;     -- image | audio | video | document | sticker
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_mime TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_url TEXT;      -- lokasi file (disk/objek) atau media id Meta
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_size INT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS transcript TEXT;     -- hasil transkrip voice note
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS transcribed_at TIMESTAMPTZ;
+
+-- ============================================================================
+-- F-41: Catatan aktivitas — siapa mengubah apa, kapan.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS audit_log (
+  id              UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  organization_id UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  actor_user_id   UUID REFERENCES users(id) ON DELETE SET NULL,
+  action          TEXT NOT NULL,        -- mis. order.status_changed, channel.deleted
+  entity          TEXT,
+  entity_id       UUID,
+  detail          JSONB,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_audit_log_org ON audit_log(organization_id, created_at DESC);
+
+-- ============================================================================
+-- P-21: Index organization_id yang hilang (dipakai hampir di semua query).
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_departments_org ON departments(organization_id);
+CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
+CREATE INDEX IF NOT EXISTS idx_channels_org ON whatsapp_channels(organization_id);

@@ -1,215 +1,237 @@
-import { config } from "../config";
 import { pool } from "../db/pool";
+import { getAiConfig, isBudgetExceeded } from "./usage";
+import { callClaude } from "./anthropic";
+import { getRecentHistory } from "./history";
+import { buildKnowledgeContext } from "./knowledge";
+import { detectProduct } from "./productDetector";
+import { checkGuardrails } from "./guardrails";
+import { splitIntoBubbles, typingDelayMs, recentOpeners, rememberOpener } from "./humanizer";
 
-interface GenerateReplyParams {
+export interface GenerateReplyParams {
   organizationId: string;
   conversationId: string;
   incomingText: string;
   /**
    * P-6: dipakai untuk menentukan produk yang sedang dibicarakan (lewat
-   * whatsapp_channels.product_id) kalau conversations.product_id belum diisi.
-   * Opsional supaya pemanggil lama (kalau ada) tetap kompilasi — tanpa ini,
-   * knowledge base tidak disaring per produk (perilaku lama: ambil semua).
+   * whatsapp_channels.product_id) kalau conversations.product_id belum diisi,
+   * dan untuk mengambil persona/pengaturan AI nomor ini. Opsional supaya
+   * pemanggil lama tetap kompilasi — kalau kosong, dipakai channel_id yang
+   * tersimpan di baris conversations itu sendiri (selalu ada, NOT NULL).
    */
   channelId?: string;
+  /** F-2: URL/teks sumber iklan (CTWA) — dipakai detectProduct untuk mencocokkan produk tanpa AI. */
+  adSourceUrl?: string | null;
 }
 
-interface AnthropicContentBlock {
-  type: string;
-  text?: string;
+export interface AiReplyDetail {
+  text: string;
+  productId: string | null;
+  /** F-4: pecahan gelembung chat siap kirim berurutan (lihat humanizer.ts). */
+  bubbles: string[];
+  /** F-4: jeda "mengetik" (ms) yang disarankan sebelum mengirim balasan ini. */
+  delayMs: number;
 }
 
-interface AnthropicMessageResponse {
-  content?: AnthropicContentBlock[];
-  error?: { message?: string; type?: string };
+interface ConversationContext {
+  channelId: string;
+  aiPaused: boolean;
 }
 
-interface AiConfig {
-  apiKey: string;
-  model: string;
-  systemPrompt: string | null;
+interface ChannelPersona {
+  aiEnabled: boolean;
+  personaName: string | null;
+  personaPrompt: string | null;
 }
 
-interface ChatMessage {
-  role: "user" | "assistant";
-  content: string;
-}
-
-const MAX_HISTORY_MESSAGES = 10;
+const MAX_TOKENS_REPLY = 600;
 
 /**
- * Balasan otomatis berbasis Claude API (Anthropic), dipakai sebagai fallback
- * terakhir di webhook.ts (lihat maybeAutoReply) — hanya jalan kalau tidak ada
- * aturan kata kunci/jam kerja yang cocok.
+ * "Otak AI" CakapCepat — perakit semua modul src/ai/* jadi satu balasan siap
+ * kirim, dipakai baik oleh maybeGenerateAiReply (perilaku lama, cuma butuh
+ * teksnya sebagai string|null) maupun oleh kode pengiriman manusiawi di
+ * src/whatsapp/* (butuh detail: produk yang terdeteksi, pecahan gelembung
+ * chat, jeda mengetik — lihat generateAiReplyDetailed di bawah).
  *
- * Kredensial diambil dari database dulu (diatur lewat dashboard, halaman
- * Otomatisasi), baru fallback ke env var AI_PROVIDER_API_KEY/AI_MODEL kalau
- * organisasi belum mengisi apa pun di dashboard.
- *
- * Return null berarti "jangan balas otomatis" — AI belum dikonfigurasi,
- * pesan kosong, atau panggilan ke Claude API gagal. Dalam semua kasus itu,
- * chat tetap masuk normal ke inbox untuk dijawab manusia.
+ * Urutan langkahnya sesuai keputusan produk (F-1 s/d F-10, lihat schema.sql):
+ *   (a) berhenti kalau ai_paused (dikunci guardrail/manual) atau nomor ini
+ *       memang belum dinyalakan AI-nya (whatsapp_channels.ai_enabled)
+ *   (b) pagar pengaman (guardrails) dulu — kalau kena, AI mundur giliran ini
+ *   (c) deteksi produk yang sedang dibicarakan
+ *   (d) susun pengetahuan berlapis (toko > kategori > produk)
+ *   (e) sisipkan persona nomor ke system prompt
+ *   (f) larang mengulang pembuka yang baru saja dipakai di nomor ini
+ *   (g) larangan keras: cuma boleh sebut fakta yang ada di konteks
+ *   (h) panggil Claude lewat satu pintu (callClaude — mencatat biaya & cek budget)
+ *   (i) ingat pembuka balasan ini supaya tidak diulang lagi ke depan
  */
-export async function maybeGenerateAiReply({
-  organizationId,
-  conversationId,
-  incomingText,
-  channelId,
-}: GenerateReplyParams): Promise<string | null> {
+export async function generateAiReplyDetailed(params: GenerateReplyParams): Promise<AiReplyDetail | null> {
+  const { organizationId, conversationId, incomingText } = params;
   if (!incomingText.trim()) return null;
+
+  const convo = await loadConversationContext(conversationId, params.channelId);
+  if (!convo) return null;
+  if (convo.aiPaused) return null; // (a) — chat sedang dipegang manusia / dikunci guardrail sebelumnya
+
+  const channel = await loadChannelPersona(convo.channelId);
+  if (channel && !channel.aiEnabled) return null; // (a) — AI belum dinyalakan utk nomor ini (F-3, default MATI)
+
+  const guardrail = await checkGuardrails({ organizationId, conversationId, incomingText }); // (b)
+  if (guardrail.triggered) return null;
 
   const aiConfig = await getAiConfig(organizationId);
   if (!aiConfig.apiKey) {
-    // AI belum disetel di dashboard maupun env var — biarkan chat masuk
-    // normal ke inbox untuk dijawab manusia.
+    // AI belum dikonfigurasi sama sekali (dashboard maupun env var) — biarkan
+    // chat masuk normal ke inbox untuk dijawab manusia.
     return null;
   }
 
-  const productId = await resolveProductId(conversationId, channelId);
-  const [knowledge, history] = await Promise.all([
-    getKnowledgeBaseContext(organizationId, productId),
+  if (await isBudgetExceeded(organizationId)) {
+    console.error(`[ai] Batas biaya AI harian organisasi ${organizationId} sudah habis — balasan AI ditahan.`);
+    return null;
+  }
+
+  const productId = await detectProduct({
+    organizationId,
+    conversationId,
+    channelId: convo.channelId,
+    incomingText,
+    adSourceUrl: params.adSourceUrl ?? null,
+  }); // (c)
+
+  const [knowledge, history, openers] = await Promise.all([
+    buildKnowledgeContext(organizationId, productId), // (d)
     getRecentHistory(conversationId),
+    recentOpeners(organizationId, convo.channelId), // (f)
   ]);
 
-  try {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": aiConfig.apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: aiConfig.model,
-        max_tokens: 400,
-        system: buildSystemPrompt(knowledge, aiConfig.systemPrompt),
-        messages: [...history, { role: "user", content: incomingText }],
-      }),
-    });
+  const system = buildSystemPrompt({
+    knowledge,
+    orgSystemPrompt: aiConfig.systemPrompt,
+    personaName: channel?.personaName ?? null,
+    personaPrompt: channel?.personaPrompt ?? null,
+    recentOpeners: openers,
+  }); // (e) + (f) + (g)
 
-    const data = (await res.json()) as AnthropicMessageResponse;
+  const text = await callClaude({
+    organizationId,
+    conversationId,
+    purpose: "reply",
+    model: aiConfig.model,
+    system,
+    messages: [...history, { role: "user", content: incomingText }],
+    maxTokens: MAX_TOKENS_REPLY,
+  }); // (h)
+  if (!text) return null;
 
-    if (!res.ok) {
-      console.error(
-        `[ai] Panggilan Claude API gagal (${res.status}) untuk conversation ${conversationId}:`,
-        data?.error?.message ?? data
-      );
-      return null;
-    }
+  await rememberOpener(organizationId, convo.channelId, text); // (i)
 
-    const reply = data.content?.find((block) => block.type === "text")?.text?.trim();
-    return reply || null;
-  } catch (err) {
-    console.error(`[ai] Gagal menghubungi Claude API untuk conversation ${conversationId}:`, err);
-    return null;
-  }
-}
-
-async function getAiConfig(organizationId: string): Promise<AiConfig> {
-  const { rows } = await pool.query(
-    "SELECT ai_api_key, ai_model, ai_system_prompt FROM organization WHERE id = $1",
-    [organizationId]
-  );
-  const org = rows[0];
   return {
-    apiKey: org?.ai_api_key || config.ai.apiKey || "",
-    model: org?.ai_model || config.ai.model,
-    systemPrompt: org?.ai_system_prompt || null,
+    text,
+    productId,
+    bubbles: splitIntoBubbles(text),
+    delayMs: typingDelayMs(text),
   };
 }
 
-// P-6: tentukan produk yang sedang dibicarakan di percakapan ini — utamakan
-// conversations.product_id (bisa diisi manual dari dashboard), fallback ke
-// whatsapp_channels.product_id milik channel yang dipakai (nomor WA khusus
-// produk tertentu, lihat komentar whatsapp_channels di schema.sql). Return
-// null kalau keduanya kosong — berarti produk tidak diketahui, knowledge base
-// diambil semua seperti perilaku lama (lihat getKnowledgeBaseContext).
-async function resolveProductId(conversationId: string, channelId?: string): Promise<string | null> {
-  const { rows } = await pool.query("SELECT product_id, channel_id FROM conversations WHERE id = $1", [
+/**
+ * Balasan otomatis berbasis Claude API — dipakai sebagai fallback terakhir
+ * di src/whatsapp/ingest.ts (lihat maybeAutoReply), hanya jalan kalau tidak
+ * ada aturan kata kunci/jam kerja yang cocok.
+ *
+ * JANGAN UBAH tipe kembalian ini (Promise<string|null>) — pemanggil lama
+ * mengharapkan persis ini. Untuk detail lengkap (produk terdeteksi, pecahan
+ * gelembung chat, jeda mengetik) dipakai pengiriman manusiawi, pakai
+ * generateAiReplyDetailed di atas.
+ */
+export async function maybeGenerateAiReply(params: GenerateReplyParams): Promise<string | null> {
+  const detail = await generateAiReplyDetailed(params);
+  return detail?.text ?? null;
+}
+
+async function loadConversationContext(
+  conversationId: string,
+  paramChannelId?: string
+): Promise<ConversationContext | null> {
+  const { rows } = await pool.query("SELECT channel_id, ai_paused FROM conversations WHERE id = $1", [
     conversationId,
   ]);
   const convo = rows[0];
-  if (convo?.product_id) return convo.product_id;
+  if (!convo) return null;
 
-  const resolvedChannelId: string | undefined = channelId ?? convo?.channel_id ?? undefined;
-  if (!resolvedChannelId) return null;
-
-  const { rows: channelRows } = await pool.query(
-    "SELECT product_id FROM whatsapp_channels WHERE id = $1",
-    [resolvedChannelId]
-  );
-  return channelRows[0]?.product_id ?? null;
+  return {
+    channelId: paramChannelId ?? convo.channel_id,
+    aiPaused: convo.ai_paused === true,
+  };
 }
 
-// P-6: materi Knowledge Base disaring per produk supaya AI tidak "nyasar"
-// menjawab pakai info produk lain saat organisasi punya banyak nomor WA untuk
-// banyak produk berbeda. Materi tanpa product_id (NULL) dianggap pengetahuan
-// UMUM toko (mis. jam operasional, kebijakan retur) — selalu ikut disertakan
-// apa pun produknya. Kalau produk tidak diketahui (productId null), ambil
-// semua materi seperti perilaku lama.
-async function getKnowledgeBaseContext(organizationId: string, productId: string | null): Promise<string> {
-  const { rows } = productId
-    ? await pool.query(
-        `SELECT title, content FROM knowledge_base_entries
-         WHERE organization_id = $1 AND (product_id = $2 OR product_id IS NULL)
-         ORDER BY created_at DESC LIMIT 50`,
-        [organizationId, productId]
-      )
-    : await pool.query(
-        "SELECT title, content FROM knowledge_base_entries WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 50",
-        [organizationId]
-      );
-  if (rows.length === 0) return "(Tim belum mengisi materi apa pun di Knowledge Base.)";
-  return rows.map((r) => `## ${r.title}\n${r.content}`).join("\n\n");
-}
-
-// Ambil beberapa pesan terakhir di percakapan ini supaya AI punya konteks
-// obrolan (bukan cuma menjawab 1 pesan tanpa tahu apa yang sudah dibahas).
-async function getRecentHistory(conversationId: string): Promise<ChatMessage[]> {
+async function loadChannelPersona(channelId: string): Promise<ChannelPersona | null> {
   const { rows } = await pool.query(
-    `SELECT direction, content
-     FROM messages
-     WHERE conversation_id = $1 AND content_type = 'text'
-     ORDER BY created_at DESC
-     LIMIT $2`,
-    [conversationId, MAX_HISTORY_MESSAGES]
+    "SELECT ai_enabled, persona_name, persona_prompt FROM whatsapp_channels WHERE id = $1",
+    [channelId]
   );
-  const messages = rows
-    .reverse()
-    .map((m): ChatMessage => ({
-      role: m.direction === "inbound" ? "user" : "assistant",
-      content: typeof m.content?.body === "string" ? m.content.body : "",
-    }))
-    .filter((m) => m.content.trim().length > 0);
+  const ch = rows[0];
+  if (!ch) return null;
+  return {
+    aiEnabled: ch.ai_enabled === true,
+    personaName: ch.persona_name ?? null,
+    personaPrompt: ch.persona_prompt ?? null,
+  };
+}
 
-  // P-22: API Claude mewajibkan urutan peran user/assistant berselang-seling
-  // dan wajib DIMULAI dari "user" — riwayat mentah bisa melanggar ini kalau
-  // ada 2+ pesan berurutan dengan arah yang sama (mis. CS balas manual 2x
-  // berturut-turut, atau pelanggan kirim 2 pesan terpisah tanpa dibalas dulu).
-  // Gabungkan pesan berurutan dengan role sama jadi satu (isi disambung baris
-  // baru), lalu buang dari depan sampai pesan pertama ber-role "user".
-  const merged: ChatMessage[] = [];
-  for (const m of messages) {
-    const last = merged[merged.length - 1];
-    if (last && last.role === m.role) {
-      last.content = `${last.content}\n${m.content}`;
-    } else {
-      merged.push({ ...m });
-    }
+function buildSystemPrompt(args: {
+  knowledge: string;
+  orgSystemPrompt: string | null;
+  personaName: string | null;
+  personaPrompt: string | null;
+  recentOpeners: string[];
+}): string {
+  const { knowledge, orgSystemPrompt, personaName, personaPrompt, recentOpeners } = args;
+
+  const lines: string[] = [];
+
+  // (e) Persona ikut NOMOR (mis. "Rina"), pengetahuan ikut PRODUK — lihat
+  // komentar F-3 di schema.sql — supaya satu CS virtual bisa layani banyak
+  // produk tanpa gaya bicaranya berubah-ubah.
+  if (personaName) {
+    lines.push(
+      `Kamu berperan sebagai ${personaName}, staf customer service toko ini yang membalas chat WhatsApp pelanggan.`
+    );
+    if (personaPrompt) lines.push(personaPrompt);
+    if (orgSystemPrompt) lines.push(orgSystemPrompt);
+  } else {
+    lines.push(orgSystemPrompt || "Kamu adalah staf customer service yang membalas chat WhatsApp pelanggan toko ini.");
+    if (personaPrompt) lines.push(personaPrompt);
   }
 
-  const firstUserIndex = merged.findIndex((m) => m.role === "user");
-  return firstUserIndex === -1 ? [] : merged.slice(firstUserIndex);
-}
+  lines.push(
+    "Balas SEPERTI MANUSIA SUNGGUHAN: singkat, natural, ramah, dalam Bahasa Melayu/Indonesia santai sesuai gaya pelanggan (ikuti bahasa pelanggan kalau menulis dalam bahasa lain).",
+    "Jangan terdengar seperti template/robot — jangan selalu mulai balasan dengan sapaan formal yang sama persis."
+  );
 
-function buildSystemPrompt(knowledge: string, customPersona: string | null): string {
-  return [
-    customPersona ||
-      "Kamu adalah asisten customer service yang membalas chat WhatsApp untuk tim internal.",
-    "Jawab singkat, ramah, dan dalam Bahasa Indonesia (kecuali pelanggan menulis dalam bahasa lain).",
-    "Jawab HANYA berdasarkan informasi di Knowledge Base berikut. Kalau pertanyaannya di luar itu atau kamu tidak yakin, jujur bilang belum tahu dan sarankan pelanggan menunggu dibalas tim — jangan mengarang jawaban.",
+  // (f) F-5 anti pembuka berulang — 50 chat dengan pembuka identik tetap
+  // terbaca sebagai bot walau isi selebihnya berbeda-beda.
+  if (recentOpeners.length > 0) {
+    lines.push(
+      "",
+      "JANGAN memulai balasan dengan kalimat pembuka yang PERSIS SAMA seperti salah satu daftar berikut (baru saja dipakai di chat lain, cari kalimat pembuka lain):",
+      ...recentOpeners.map((o) => `- "${o}"`)
+    );
+  }
+
+  // (g) Larangan keras — tujuan bisnis utama: AI TIDAK PERNAH salah menyebut
+  // fakta produk (harga/stok/janji pengiriman yang dikarang bisa langsung
+  // merugikan bisnis nyata & merusak kepercayaan pelanggan COD).
+  lines.push(
     "",
-    "=== Knowledge Base ===",
-    knowledge,
-  ].join("\n");
+    "ATURAN KERAS (WAJIB dipatuhi):",
+    "1. Kamu HANYA boleh menyebut harga, stok, varian, atau fakta produk lain yang ADA di dalam Knowledge Base di bawah ini.",
+    "2. DILARANG KERAS mengarang harga, stok, waktu pengiriman, atau janji apa pun yang tidak tertulis di Knowledge Base.",
+    "3. Kalau pelanggan tanya sesuatu yang jawabannya TIDAK ADA di Knowledge Base, JUJUR bilang akan dicek dulu oleh tim — jangan menebak atau mengarang.",
+    "4. Jangan pernah menjanjikan diskon, refund, atau kompensasi apa pun tanpa persetujuan tim.",
+    "",
+    "=== Knowledge Base (satu-satunya sumber fakta produk yang boleh kamu pakai) ===",
+    knowledge
+  );
+
+  return lines.join("\n");
 }

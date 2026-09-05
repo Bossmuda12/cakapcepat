@@ -1,6 +1,7 @@
 import { pool } from "../db/pool";
-import { maybeGenerateAiReply } from "../ai/chatbot";
+import { generateAiReplyDetailed } from "../ai/chatbot";
 import { broadcastToOrg } from "../realtime";
+import { sendHumanized } from "./outbox";
 
 /**
  * Logika inti "pesan WhatsApp masuk -> tersimpan di dashboard" yang DIPAKAI
@@ -14,6 +15,18 @@ import { broadcastToOrg } from "../realtime";
  * resmi atau nomor tim yang disambungkan lewat QR.
  */
 
+/** F-30/F-31/F-33: info media (foto/voice note/video/dokumen/stiker) yang sudah disimpan lewat media.ts. */
+export interface IngestMediaInfo {
+  /** image | audio | video | document | sticker — dipakai juga sbg content_type di tabel messages. */
+  type: string;
+  mime: string;
+  /** Path relatif hasil saveIncomingMedia, mis. "/uploads/media/<org>/<uuid>.ext". */
+  url: string;
+  size?: number | null;
+  transcript?: string | null;
+  transcribedAt?: Date | null;
+}
+
 export interface IngestInboundMessageInput {
   channelId: string;
   organizationId: string;
@@ -24,12 +37,14 @@ export interface IngestInboundMessageInput {
   textBody: string;
   ctwaClid?: string | null;
   adSourceUrl?: string | null;
+  /** F-30: diisi kalau pesan ini media (foto/voice note/dst) — null/absen berarti pesan teks biasa. */
+  media?: IngestMediaInfo | null;
 }
 
 export async function ingestInboundMessage(
   input: IngestInboundMessageInput
 ): Promise<{ conversationId: string; duplicate: boolean }> {
-  const { channelId, organizationId, waNumber, contactName, waMessageId, textBody, ctwaClid, adSourceUrl } =
+  const { channelId, organizationId, waNumber, contactName, waMessageId, textBody, ctwaClid, adSourceUrl, media } =
     input;
 
   const { rows: contactRows } = await pool.query(
@@ -68,17 +83,39 @@ export async function ingestInboundMessage(
 
   const conversationId: string = convoRows[0].id;
 
+  // F-30/F-31/F-33: pesan media (foto/voice note/video/dokumen/stiker) dicatat
+  // dengan content_type = jenis medianya (bukan selalu 'text' seperti dulu) +
+  // kolom media_type/media_mime/media_url/media_size/transcript/transcribed_at
+  // terisi. content JSONB tetap diisi { body: textBody } (caption atau hasil
+  // transkrip kalau ada, string kosong kalau tidak) — dipertahankan tetap
+  // berbentuk sama seperti pesan teks supaya kode lama yang membaca
+  // content.body tidak ikut rusak.
+  //
   // P-3: wa_message_id sekarang UNIQUE (partial index, lihat schema.sql) —
   // kalau pesan ini sudah pernah dicatat sebelumnya (mis. webhook Meta yang
   // dikirim ulang, atau event Baileys yang diproses dua kali), INSERT ini
   // tidak menghasilkan baris apa pun. Pemanggil WAJIB melewati auto-reply
   // saat duplicate=true supaya balasan tidak ikut terkirim dobel.
   const { rows: messageRows } = await pool.query(
-    `INSERT INTO messages (conversation_id, direction, wa_message_id, content_type, content, status)
-     VALUES ($1, 'inbound', $2, 'text', $3, 'received')
+    `INSERT INTO messages (
+       conversation_id, direction, wa_message_id, content_type, content, status,
+       media_type, media_mime, media_url, media_size, transcript, transcribed_at
+     )
+     VALUES ($1, 'inbound', $2, $3, $4, 'received', $5, $6, $7, $8, $9, $10)
      ON CONFLICT (wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
      RETURNING id`,
-    [conversationId, waMessageId ?? null, JSON.stringify({ body: textBody })]
+    [
+      conversationId,
+      waMessageId ?? null,
+      media?.type ?? "text",
+      JSON.stringify({ body: textBody }),
+      media?.type ?? null,
+      media?.mime ?? null,
+      media?.url ?? null,
+      media?.size ?? null,
+      media?.transcript ?? null,
+      media?.transcribedAt ?? null,
+    ]
   );
   const duplicate = messageRows.length === 0;
 
@@ -94,8 +131,22 @@ export interface MaybeAutoReplyInput {
   conversationId: string;
   channelId: string;
   incomingText: string;
+  /**
+   * Nomor/JID tujuan balasan — dipakai sbg parameter `jid` saat balasan AI
+   * dikirim lewat sendHumanized (lihat outbox.ts). Untuk jalur Cloud API isi
+   * dengan nomor telepon (msg.from); untuk jalur QR isi dengan JID Baileys.
+   */
+  waNumber: string;
   /** Abstraksi kirim pesan — beda implementasi per jenis koneksi (Cloud API HTTP vs socket Baileys). */
   send: (text: string) => Promise<void>;
+  /**
+   * F-4: opsional — update status "sedang mengetik" ke pelanggan. Jalur QR
+   * bisa mengisi ini lewat sock.sendPresenceUpdate; Cloud API resmi tidak
+   * punya API presence yang setara untuk MVP ini jadi cukup dilewati
+   * (undefined) — sendHumanized tetap jalan (jeda & pemecahan gelembung
+   * tetap terjadi), cuma tanpa indikator "sedang mengetik" di sisi pelanggan.
+   */
+  presence?: (state: "composing" | "paused") => Promise<void>;
 }
 
 /**
@@ -105,21 +156,26 @@ export interface MaybeAutoReplyInput {
  *   3. Fallback ke AI chatbot — hanya kalau ada automation aktif bertipe
  *      'fallback_to_ai' UNTUK channel ini, ATAU channel belum punya automation
  *      sama sekali (supaya perilaku lama tetap jalan kalau belum diatur manual).
+ *
+ * Aturan keyword & jam kerja TETAP dikirim langsung (tanpa jeda manusiawi) —
+ * itu balasan template pendek yang memang dimaksud instan. Balasan AI-lah
+ * yang lewat jalur manusiawi (sendHumanized, lihat outbox.ts) supaya tidak
+ * terasa seperti bot yang membalas dalam hitungan milidetik.
  */
 export async function maybeAutoReply(params: MaybeAutoReplyInput) {
-  const { organizationId, conversationId, channelId, incomingText, send } = params;
+  const { organizationId, conversationId, channelId, incomingText, waNumber, send, presence } = params;
 
   const { rows: automations } = await pool.query(
     "SELECT trigger_type, config, is_active FROM automations WHERE channel_id = $1",
     [channelId]
   );
 
-  const sendAndLog = async (replyText: string, senderType: "human" | "ai" = "human") => {
-    await send(replyText);
+  const sendAndLog = async (replyText: string, senderType: "human" | "ai" = "human", status = "sent") => {
+    if (status === "sent") await send(replyText);
     await pool.query(
       `INSERT INTO messages (conversation_id, direction, sender_type, content_type, content, status)
-       VALUES ($1, 'outbound', $2, 'text', $3, 'sent')`,
-      [conversationId, senderType, JSON.stringify({ body: replyText })]
+       VALUES ($1, 'outbound', $2, 'text', $3, $4)`,
+      [conversationId, senderType, JSON.stringify({ body: replyText }), status]
     );
     broadcastToOrg(organizationId, { type: "message", conversationId });
   };
@@ -145,12 +201,55 @@ export async function maybeAutoReply(params: MaybeAutoReplyInput) {
 
   const hasFallbackToAiRule = automations.some((a) => a.trigger_type === "fallback_to_ai" && a.is_active);
   const noAutomationsConfigured = automations.length === 0;
-  if (hasFallbackToAiRule || noAutomationsConfigured) {
-    const aiReply = await maybeGenerateAiReply({ organizationId, conversationId, channelId, incomingText });
-    if (aiReply) {
-      await sendAndLog(aiReply, "ai");
-    }
+  if (!hasFallbackToAiRule && !noAutomationsConfigured) return;
+
+  // F-3: AI dimatikan manual dari dashboard untuk nomor ini — jangan panggil
+  // AI sama sekali (bukan cuma "jangan kirim balasannya").
+  const { rows: channelRows } = await pool.query(
+    "SELECT ai_enabled, ai_approval_mode FROM whatsapp_channels WHERE id = $1",
+    [channelId]
+  );
+  const channelCfg = channelRows[0];
+  if (!channelCfg?.ai_enabled) return;
+
+  const aiResult = await generateAiReplyDetailed({ organizationId, conversationId, channelId, incomingText });
+  if (!aiResult) return;
+
+  if (channelCfg.ai_approval_mode) {
+    // Mode persetujuan (F-3, default menyala): AI menyusun balasan tapi TIDAK
+    // dikirim otomatis — disimpan sbg draft (status='draft') supaya muncul
+    // di dashboard utk disetujui/diedit manusia dulu. send() SENGAJA TIDAK
+    // dipanggil.
+    await sendAndLog(aiResult.text, "ai", "draft");
+    console.log(
+      `[ingest] Balasan AI utk conversation ${conversationId} disimpan sbg draft (ai_approval_mode menyala) — menunggu persetujuan manusia.`
+    );
+    return;
   }
+
+  // F-4: balasan AI (bukan template keyword/jam kerja) lewat jalur manusiawi —
+  // dipecah jadi beberapa gelembung dengan jeda alami, bukan langsung
+  // ditembak sekaligus. sendHumanized yang menghitung ulang pemecahan
+  // gelembung & jeda (bukan pakai aiResult.bubbles/delayMs) supaya perilaku
+  // "manusiawi" konsisten dipakai SEMUA balasan AI, bukan cuma yang lewat
+  // chatbot.ts — lihat outbox.ts.
+  await sendHumanized({
+    channelId,
+    conversationId,
+    organizationId,
+    jid: waNumber,
+    text: aiResult.text,
+    send: async (bubbleText) => {
+      await send(bubbleText);
+      await pool.query(
+        `INSERT INTO messages (conversation_id, direction, sender_type, content_type, content, status)
+         VALUES ($1, 'outbound', 'ai', 'text', $2, 'sent')`,
+        [conversationId, JSON.stringify({ body: bubbleText })]
+      );
+      broadcastToOrg(organizationId, { type: "message", conversationId });
+    },
+    presence,
+  });
 }
 
 // Zona waktu Indonesia Barat (WIB, UTC+7) dipakai sebagai default kalau

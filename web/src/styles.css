@@ -1252,3 +1252,93 @@ tr:last-child td { border-bottom: none; }
 .legal-page-inner ul, .legal-page-inner ol { padding-left: 22px; }
 .legal-page-inner li { margin-bottom: 6px; }
 .legal-page-inner a { color: var(--primary); }
+
+/* --- Pesanan (F-11 s/d F-24): dua lencana status + lencana bermasalah --- */
+.badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.badge-problem {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fca5a5;
+}
+.badge-problem::before { content: "⚠"; font-size: 10.5px; }
+[data-theme="dark"] .badge-problem { background: #3a1717; color: #f87171; border-color: #7f1d1d; }
+
+/* --- Otomatisasi AI: pemilih grup closingan --- */
+.group-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 10px;
+}
+.group-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  font-weight: 400;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+/* --- Percakapan: media (foto/voice note/dokumen), ringkasan AI, balasan draft --- */
+.ai-summary-box {
+  margin: 0 14px 10px;
+  padding: 10px 12px;
+  background: #eef2f7;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 12.5px;
+  color: var(--text);
+}
+[data-theme="dark"] .ai-summary-box { background: #1b2333; }
+
+.bubble-media { margin-bottom: 6px; }
+.bubble-media img { max-width: 240px; max-height: 240px; border-radius: 8px; display: block; object-fit: cover; }
+.bubble-media video { max-width: 260px; border-radius: 8px; display: block; }
+.bubble-media audio { width: 240px; display: block; }
+.bubble-media-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--primary);
+  text-decoration: none;
+}
+.bubble-media-doc:hover { text-decoration: underline; }
+.bubble-transcript {
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.bubble.draft {
+  border: 1.5px dashed var(--text-muted);
+  background: transparent;
+}
+[data-theme="dark"] .bubble.draft { border-color: #6b7280; }
+.bubble-draft-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}

@@ -3,7 +3,11 @@ import crypto from "node:crypto";
 import { config } from "../config";
 import { pool } from "../db/pool";
 import { sendTextMessage } from "./client";
-import { ingestInboundMessage, maybeAutoReply } from "./ingest";
+import { ingestInboundMessage, maybeAutoReply, type IngestMediaInfo } from "./ingest";
+import { saveIncomingMedia, transcribeVoiceNote } from "./media";
+
+/** Jenis pesan Meta Cloud API yang berisi lampiran media (lihat F-30/F-31/F-33). */
+const MEDIA_MESSAGE_TYPES = ["image", "audio", "video", "document", "sticker"] as const;
 
 export const webhookRouter = Router();
 
@@ -125,7 +129,64 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
     console.log(`[webhook] Chat ini berasal dari iklan CTWA, ctwa_clid=${ctwaClid}`);
   }
 
-  const textBody = msg.text?.body ?? "";
+  const msgType: string = msg.type ?? "text";
+  let textBody: string = msg.text?.body ?? "";
+  let media: IngestMediaInfo | null = null;
+
+  // F-30/F-31/F-33: dulu HANYA type === 'text' yang diproses — pesan foto
+  // (alamat, bukti transfer), voice note, video, dokumen, & stiker DIBUANG
+  // total (tidak pernah masuk ke ingestInboundMessage sama sekali). Sekarang
+  // semua jenis itu disimpan: berkasnya diunduh & disimpan lokal lewat
+  // saveIncomingMedia, lalu pesan tetap dicatat dengan content_type &
+  // kolom media_* terisi — bukan hilang tanpa jejak.
+  if ((MEDIA_MESSAGE_TYPES as readonly string[]).includes(msgType)) {
+    const mediaObj = msg[msgType] as { id?: string; mime_type?: string; caption?: string } | undefined;
+    const mediaId = mediaObj?.id;
+    const mime = mediaObj?.mime_type ?? "application/octet-stream";
+    const caption = mediaObj?.caption ?? "";
+
+    if (!mediaId) {
+      console.warn(`[webhook] Pesan bertipe ${msgType} tanpa media id (wa_message_id=${msg.id}) — dilewati.`);
+    } else {
+      const saved = await saveIncomingMedia({
+        organizationId,
+        mediaId,
+        mime,
+        kind: msgType,
+        accessToken: channel.access_token,
+      });
+
+      if (!saved) {
+        console.error(
+          `[webhook] Gagal simpan media (${msgType}) utk wa_message_id=${msg.id} — pesan TETAP dicatat, tanpa berkas.`
+        );
+        if (caption) textBody = caption;
+      } else {
+        media = { type: msgType, mime, url: saved.url, size: saved.size };
+
+        if (msgType === "audio") {
+          // Voice note: teks yang dipakai utk auto-reply/AI adalah HASIL
+          // TRANSKRIPNYA, bukan caption (audio Cloud API tidak punya caption).
+          const transcript = await transcribeVoiceNote({ organizationId, filePath: saved.url, mime });
+          if (transcript) {
+            media.transcript = transcript;
+            media.transcribedAt = new Date();
+            textBody = transcript;
+          }
+        } else if (caption) {
+          textBody = caption;
+        }
+      }
+    }
+  }
+
+  // Pesan tanpa teks DAN tanpa media (mis. jenis pesan yang belum kita
+  // dukung sama sekali, atau media yang gagal diunduh tanpa caption) boleh
+  // dilewati — tidak ada apa pun yang bisa dicatat.
+  if (!textBody && !media) {
+    console.warn(`[webhook] Pesan tanpa teks & media dilewati (type=${msgType}, wa_message_id=${msg.id}).`);
+    return;
+  }
 
   const { conversationId, duplicate } = await ingestInboundMessage({
     channelId: channel.id,
@@ -136,6 +197,7 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
     textBody,
     ctwaClid,
     adSourceUrl: referral?.source_url ?? null,
+    media,
   });
 
   // P-3: pesan kembar (retry webhook dari Meta) tidak boleh memicu auto-reply
@@ -150,8 +212,12 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
     conversationId,
     channelId: channel.id,
     incomingText: textBody,
+    waNumber: msg.from,
     send: async (replyText) => {
       await sendTextMessage({ to: msg.from, body: replyText, phoneNumberId, accessToken: channel.access_token });
     },
+    // Cloud API resmi tidak punya endpoint presence "sedang mengetik" yang
+    // setara dengan Baileys utk MVP ini — presence sengaja dilewati
+    // (undefined), sendHumanized tetap jalan tanpa indikator itu.
   });
 }

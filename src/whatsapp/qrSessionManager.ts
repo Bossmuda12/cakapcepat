@@ -3,6 +3,7 @@ import makeWASocket, {
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
   initAuthCreds,
+  downloadMediaMessage,
   BufferJSON,
   proto,
   Browsers,
@@ -11,10 +12,12 @@ import makeWASocket, {
   type SignalDataTypeMap,
   type WASocket,
 } from "@whiskeysockets/baileys";
+import path from "node:path";
 import pino from "pino";
 import QRCode from "qrcode";
 import { pool } from "../db/pool";
-import { ingestInboundMessage, maybeAutoReply } from "./ingest";
+import { ingestInboundMessage, maybeAutoReply, type IngestMediaInfo } from "./ingest";
+import { saveIncomingMedia, transcribeVoiceNote, resolveDiskPath, mimeFromExt, kindFromExt } from "./media";
 
 /**
  * Sesi WhatsApp TANPA API resmi — nyambung persis seperti WhatsApp Web
@@ -59,6 +62,11 @@ const MAX_RECONNECT_DELAY_MS = 5 * 60 * 1000;
 // Isinya Promise dari proses start yang SEDANG berjalan — panggilan lain untuk
 // channelId yang sama ikut menunggu Promise itu, bukan membuat socket baru.
 const startingSessions = new Map<string, Promise<void>>();
+
+// F-34: jangan spam peringatan "nomor terputus" tiap kali reconnect gagal
+// (bisa berkali-kali dalam hitungan menit selama backoff) — cukup 1x per
+// 30 menit per channel. Dicek lewat whatsapp_channels.last_disconnect_notified_at.
+const DISCONNECT_NOTIFY_COOLDOWN_MS = 30 * 60 * 1000;
 
 // --- Auth-state Baileys disimpan di Postgres, bukan file lokal (lihat catatan di atas). ---
 
@@ -333,6 +341,16 @@ async function handleConnectionUpdate(
         `[qr-session] Channel ${channelId} terputus, mencoba menyambung ulang ` +
           `(percobaan ${attempt}/${MAX_RECONNECT_ATTEMPTS}) dalam ${delay}ms...`
       );
+
+      // F-34: nomor tim yang tiba-tiba terputus (bukan logout disengaja) adalah
+      // closing yang berpotensi hilang tanpa ketahuan — owner PERLU diberi tahu,
+      // bukan cuma dicatat di log server yang tidak pernah dilihat siapa pun.
+      // Pengiriman laporannya sendiri dikerjakan agen lain (lihat komentar
+      // notifyChannelDisconnected) — di sini cuma pengecekan cooldown + log.
+      notifyChannelDisconnected(channelId).catch((err) =>
+        console.error(`[qr-session] Gagal memproses peringatan disconnect channel ${channelId}:`, err)
+      );
+
       setTimeout(() => {
         startQrSession(channelId, organizationId).catch((err) =>
           console.error(`[qr-session] Gagal menyambung ulang channel ${channelId}:`, err)
@@ -340,6 +358,46 @@ async function handleConnectionUpdate(
       }, delay);
     }
   }
+}
+
+/**
+ * F-34: dipanggil setiap kali koneksi channel putus BUKAN karena logout
+ * disengaja (mis. HP mati, internet putus, WhatsApp memblokir sesi). Kalau
+ * last_disconnect_notified_at masih dalam 30 menit terakhir, TIDAK melakukan
+ * apa-apa (cooldown, lihat DISCONNECT_NOTIFY_COOLDOWN_MS) — kalau sudah lewat
+ * (atau belum pernah), catat log peringatan yang jelas, perbarui
+ * last_disconnect_notified_at, dan kembalikan data organisasi+label channel.
+ *
+ * PENTING: fungsi ini SENGAJA TIDAK mengirim WhatsApp apa pun sendiri —
+ * pengiriman laporan ke owner (mis. lewat nomor grup closing/daily report)
+ * dikerjakan agen lain di luar src/whatsapp/ (lihat organization.closing_group_channel_id
+ * / daily_report_channel_id di schema.sql). Return null berarti "belum perlu
+ * dikirim apa-apa" (masih cooldown, atau channel tidak ditemukan).
+ */
+export async function notifyChannelDisconnected(
+  channelId: string
+): Promise<{ organizationId: string; label: string } | null> {
+  const { rows } = await pool.query(
+    "SELECT organization_id, label, display_phone_number, last_disconnect_notified_at FROM whatsapp_channels WHERE id = $1",
+    [channelId]
+  );
+  const channel = rows[0];
+  if (!channel) return null;
+
+  const lastNotified: Date | null = channel.last_disconnect_notified_at;
+  const withinCooldown = lastNotified && Date.now() - new Date(lastNotified).getTime() < DISCONNECT_NOTIFY_COOLDOWN_MS;
+  if (withinCooldown) return null;
+
+  const label: string = channel.label || channel.display_phone_number || channelId;
+  console.warn(
+    `[qr-session] PERINGATAN: nomor WhatsApp "${label}" (channel ${channelId}, org ${channel.organization_id}) ` +
+      `terputus dan belum berhasil menyambung ulang — pelanggan yang chat ke nomor ini TIDAK akan terlayani ` +
+      `sampai tersambung kembali. Owner perlu diberi tahu (lihat notifyChannelDisconnected).`
+  );
+
+  await pool.query("UPDATE whatsapp_channels SET last_disconnect_notified_at = now() WHERE id = $1", [channelId]);
+
+  return { organizationId: channel.organization_id, label };
 }
 
 async function handleIncomingBaileysMessage(
@@ -376,15 +434,77 @@ async function handleIncomingBaileysMessage(
     }
   }
 
-  const textBody =
+  let textBody =
     m.message?.conversation ??
     m.message?.extendedTextMessage?.text ??
     m.message?.imageMessage?.caption ??
     m.message?.videoMessage?.caption ??
     "";
-  // Untuk versi awal ini cuma pesan berisi teks yang dicatat (media/stiker
-  // dilewati) — cukup untuk kebutuhan pencatatan chat & klasifikasi order.
-  if (!textBody) return;
+
+  // F-30/F-31/F-33: dulu cuma pesan berisi teks yang dicatat — foto, voice
+  // note, video, dokumen, & stiker DIBUANG total (`if (!textBody) return;`
+  // di atas ini sebelumnya). Sekarang isinya diunduh lewat downloadMediaMessage
+  // & disimpan lokal (media.ts), lalu pesan tetap dicatat dengan content_type
+  // & kolom media_* terisi.
+  let media: IngestMediaInfo | null = null;
+  const mc = m.message;
+  const mediaKind: string | null = mc?.imageMessage
+    ? "image"
+    : mc?.audioMessage
+    ? "audio"
+    : mc?.videoMessage
+    ? "video"
+    : mc?.documentMessage
+    ? "document"
+    : mc?.stickerMessage
+    ? "sticker"
+    : null;
+
+  if (mediaKind) {
+    const mimetype =
+      mc?.imageMessage?.mimetype ??
+      mc?.audioMessage?.mimetype ??
+      mc?.videoMessage?.mimetype ??
+      mc?.documentMessage?.mimetype ??
+      mc?.stickerMessage?.mimetype ??
+      "application/octet-stream";
+
+    try {
+      const buffer = await downloadMediaMessage(
+        m,
+        "buffer",
+        {},
+        { logger: baileysLogger, reuploadRequest: sock.updateMediaMessage }
+      );
+      const saved = await saveIncomingMedia({ organizationId, buffer, mime: mimetype, kind: mediaKind });
+
+      if (!saved) {
+        console.error(
+          `[qr-session] Channel ${channelId}: gagal simpan media (${mediaKind}) utk pesan ${m.key.id} — pesan TETAP dicatat, tanpa berkas.`
+        );
+      } else {
+        media = { type: mediaKind, mime: mimetype, url: saved.url, size: saved.size };
+
+        if (mediaKind === "audio") {
+          // Voice note: teks yg dipakai utk auto-reply/AI adalah transkripnya.
+          const transcript = await transcribeVoiceNote({ organizationId, filePath: saved.url, mime: mimetype });
+          if (transcript) {
+            media.transcript = transcript;
+            media.transcribedAt = new Date();
+            if (!textBody) textBody = transcript;
+          }
+        } else if (mediaKind === "document" && !textBody) {
+          textBody = mc?.documentMessage?.caption ?? mc?.documentMessage?.title ?? mc?.documentMessage?.fileName ?? "";
+        }
+      }
+    } catch (err) {
+      console.error(`[qr-session] Channel ${channelId}: gagal unduh media (${mediaKind}) utk pesan ${m.key.id}:`, err);
+    }
+  }
+
+  // Pesan tanpa teks DAN tanpa media (mis. jenis pesan lain yg belum
+  // didukung sama sekali) boleh dilewati — tidak ada apa pun yg bisa dicatat.
+  if (!textBody && !media) return;
 
   // S-11/P-27: info iklan Click-to-WhatsApp (CTWA) yang dibawa dari jalur QR.
   // Baileys menaruhnya di contextInfo.externalAdReply pesan pertama yang
@@ -417,6 +537,7 @@ async function handleIncomingBaileysMessage(
     textBody,
     ctwaClid,
     adSourceUrl,
+    media,
   });
 
   // P-3: pesan kembar (event Baileys yang diproses dua kali, mis. setelah
@@ -433,8 +554,14 @@ async function handleIncomingBaileysMessage(
     conversationId,
     channelId,
     incomingText: textBody,
+    waNumber: jid,
     send: async (text) => {
       await sock.sendMessage(jid, { text });
+    },
+    // F-4: jalur QR MENDUKUNG presence "sedang mengetik" beneran (tidak
+    // seperti Cloud API resmi di webhook.ts) — dipakai sendHumanized (outbox.ts).
+    presence: async (state) => {
+      await sock.sendPresenceUpdate(state, jid);
     },
   });
 }
@@ -479,6 +606,75 @@ export async function sendViaQrSession(channelId: string, waNumber: string, text
   }
   const jid = waNumber.includes("@") ? waNumber : `${waNumber}@s.whatsapp.net`;
   await active.sock.sendMessage(jid, { text });
+}
+
+/**
+ * F-32: kirim berkas media keluar (foto/video/voice note/dokumen) lewat
+ * sesi QR/pairing aktif — padanan sendImage/sendDocument (client.ts) utk
+ * jalur Cloud API. `filePath` boleh berupa media_url relatif hasil
+ * saveIncomingMedia ("/uploads/media/<org>/<file>") ATAU path disk asli —
+ * resolveDiskPath (media.ts) menerjemahkan keduanya jadi path fisik yang
+ * sama, dan Baileys membaca isinya langsung dari disk (beda dgn Cloud API
+ * yg wajib url publik).
+ */
+export async function sendMediaViaQrSession(
+  channelId: string,
+  waNumberOrJid: string,
+  filePath: string,
+  caption?: string
+): Promise<void> {
+  const active = activeSessions.get(channelId);
+  if (!active) {
+    throw new Error(
+      "Sesi WhatsApp (QR/pairing) nomor ini sedang tidak tersambung — sambungkan ulang dari halaman Nomor WhatsApp."
+    );
+  }
+  const jid = waNumberOrJid.includes("@") ? waNumberOrJid : `${waNumberOrJid}@s.whatsapp.net`;
+  const diskPath = resolveDiskPath(filePath);
+  const ext = path.extname(diskPath);
+  const kind = kindFromExt(ext);
+  const mimetype = mimeFromExt(ext);
+
+  if (kind === "image") {
+    await active.sock.sendMessage(jid, { image: { url: diskPath }, caption, mimetype });
+  } else if (kind === "video") {
+    await active.sock.sendMessage(jid, { video: { url: diskPath }, caption, mimetype });
+  } else if (kind === "audio") {
+    // ptt=true -> tampil sbg voice note (bukan file audio biasa), lebih wajar
+    // dipakai CS/AI membalas dgn suara meniru gaya chat manusia.
+    await active.sock.sendMessage(jid, { audio: { url: diskPath }, mimetype, ptt: true });
+  } else {
+    await active.sock.sendMessage(jid, {
+      document: { url: diskPath },
+      mimetype,
+      fileName: path.basename(diskPath),
+      caption,
+    });
+  }
+}
+
+/**
+ * F-19: Ambil daftar grup WhatsApp yang diikuti nomor ini, supaya pemilik bisa
+ * MEMILIH "Grup Closingan" dari dropdown di dashboard alih-alih mengetik JID
+ * grup secara manual (JID grup tidak terlihat di aplikasi WhatsApp biasa).
+ *
+ * Hanya jalan untuk nomor yang tersambung lewat QR/pairing — Cloud API resmi
+ * memang tidak mendukung grup sama sekali.
+ */
+export async function listGroupsForChannel(
+  channelId: string
+): Promise<{ jid: string; name: string }[]> {
+  const active = activeSessions.get(channelId);
+  if (!active) {
+    throw new Error(
+      "Sesi WhatsApp nomor ini sedang tidak tersambung — sambungkan dulu di halaman Nomor WhatsApp, lalu coba lagi."
+    );
+  }
+  const groups = await active.sock.groupFetchAllParticipating();
+  return Object.values(groups)
+    .map((g: any) => ({ jid: String(g?.id ?? ""), name: String(g?.subject ?? "(tanpa nama)") }))
+    .filter((g) => g.jid.endsWith("@g.us"))
+    .sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /**
