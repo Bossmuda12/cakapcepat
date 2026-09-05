@@ -198,6 +198,8 @@ a { color: inherit; }
 }
 .kpi-card .label { font-size: 12.5px; color: var(--text-muted); margin-bottom: 6px; }
 .kpi-card .value { font-size: 26px; font-weight: 700; }
+.kpi-card.clickable { transition: border-color .15s ease, transform .15s ease; }
+.kpi-card.clickable:hover { border-color: var(--accent, #2563eb); transform: translateY(-1px); }
 
 table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 th {
@@ -384,6 +386,31 @@ tr:last-child td { border-bottom: none; }
 }
 .inbox-composer input:focus { outline: none; border-color: var(--primary); }
 
+.bubble-row { position: relative; display: flex; }
+.bubble-row.out { justify-content: flex-end; }
+.bubble-delete {
+  opacity: 0;
+  align-self: center;
+  margin: 0 6px;
+  border: none;
+  background: none;
+  color: var(--danger, #dc2626);
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity .12s ease;
+}
+.bubble-row:hover .bubble-delete { opacity: 1; }
+
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
 /* --- Logo & branding --- */
 .auth-logo {
   display: flex;
@@ -462,6 +489,7 @@ tr:last-child td { border-bottom: none; }
   padding: 4px 0;
 }
 .btn-link:hover { text-decoration: underline; }
+.btn-link:disabled { opacity: 0.45; cursor: not-allowed; text-decoration: none; }
 .avatar-edit-row {
   display: flex;
   align-items: center;

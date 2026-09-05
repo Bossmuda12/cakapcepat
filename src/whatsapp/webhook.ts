@@ -72,15 +72,27 @@ async function handleIncomingPayload(body: any) {
       const value = change.value ?? {};
       const phoneNumberId = value.metadata?.phone_number_id;
 
+      // P-2: tiap pesan/status diproses dalam try/catch SENDIRI supaya 1 item
+      // yang gagal (mis. error DB sesaat, atau bentuk payload tak terduga)
+      // tidak menggagalkan seluruh batch — item lain dalam payload yang sama
+      // tetap lanjut diproses, bukan ikut hilang.
       for (const msg of value.messages ?? []) {
-        await handleIncomingMessage(phoneNumberId, msg, value.contacts?.[0]);
+        try {
+          await handleIncomingMessage(phoneNumberId, msg, value.contacts?.[0]);
+        } catch (err) {
+          console.error(`[webhook] Gagal memproses pesan masuk (wa_message_id=${msg?.id}):`, err);
+        }
       }
 
       for (const status of value.statuses ?? []) {
-        await pool.query(
-          "UPDATE messages SET status = $1 WHERE wa_message_id = $2",
-          [status.status, status.id]
-        );
+        try {
+          await pool.query(
+            "UPDATE messages SET status = $1 WHERE wa_message_id = $2",
+            [status.status, status.id]
+          );
+        } catch (err) {
+          console.error(`[webhook] Gagal memproses update status (wa_message_id=${status?.id}):`, err);
+        }
       }
     }
   }
@@ -103,7 +115,10 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
 
   // --- Tangkap data atribusi iklan CTWA (Click-to-WhatsApp), lihat Bab 8 dokumen rencana ---
   // Meta menyisipkan objek "referral" di pesan PERTAMA yang datang dari klik iklan CTWA.
-  // Ini SATU-SATUNYA jalur yang pernah punya ctwaClid — nomor QR/pairing tidak pernah dapat ini.
+  // Sejak S-11/P-27, jalur QR/pairing JUGA bisa membawa info iklan ini (lewat
+  // contextInfo.externalAdReply Baileys, lihat qrSessionManager.ts) — jalur
+  // ini (Cloud API resmi) tetap yang paling lengkap & terpercaya karena
+  // datanya langsung dari Meta, tapi bukan lagi satu-satunya.
   const referral = msg.referral; // { source_url, ctwa_clid, headline, ... } kalau berasal dari iklan
   const ctwaClid: string | null = referral?.ctwa_clid ?? null;
   if (ctwaClid) {
@@ -112,7 +127,7 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
 
   const textBody = msg.text?.body ?? "";
 
-  const { conversationId } = await ingestInboundMessage({
+  const { conversationId, duplicate } = await ingestInboundMessage({
     channelId: channel.id,
     organizationId,
     waNumber: msg.from,
@@ -122,6 +137,13 @@ async function handleIncomingMessage(phoneNumberId: string, msg: any, waContact:
     ctwaClid,
     adSourceUrl: referral?.source_url ?? null,
   });
+
+  // P-3: pesan kembar (retry webhook dari Meta) tidak boleh memicu auto-reply
+  // lagi — pesannya sendiri sudah dilewati penyimpanannya di ingestInboundMessage.
+  if (duplicate) {
+    console.warn(`[webhook] Pesan duplikat dilewati (wa_message_id=${msg.id}), auto-reply tidak dipicu.`);
+    return;
+  }
 
   await maybeAutoReply({
     organizationId,

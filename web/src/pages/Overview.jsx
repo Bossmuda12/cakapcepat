@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { api } from "../api";
 import ModernClock from "../components/ModernClock";
 import DateRangeFilter from "../components/DateRangeFilter";
-import { defaultRange } from "../dateRangePresets";
+import { defaultRange, presetLabel } from "../dateRangePresets";
 
 function Icon({ path }) {
   return (
@@ -22,9 +23,11 @@ const ICONS = {
 };
 
 export default function Overview() {
+  const navigate = useNavigate();
   const [range, setRange] = useState(defaultRange());
   const [stats, setStats] = useState(null);
   const [error, setError] = useState("");
+  const [reloadTick, setReloadTick] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -41,7 +44,7 @@ export default function Overview() {
     return () => {
       cancelled = true;
     };
-  }, [range.from, range.to]);
+  }, [range.from, range.to, reloadTick]);
 
   return (
     <div>
@@ -58,39 +61,46 @@ export default function Overview() {
         <DateRangeFilter value={range} onChange={setRange} />
       </div>
 
-      {error && <div className="error-box">{error}</div>}
+      {error && (
+        <div className="error-box" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <span>{error}</span>
+          <button className="btn secondary" type="button" onClick={() => setReloadTick((t) => t + 1)}>
+            Coba lagi
+          </button>
+        </div>
+      )}
       {!stats && !error && <div className="loading-block">Memuat data...</div>}
 
       {stats && (
         <div className="kpi-grid">
-          <div className="kpi-card">
+          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/channels")}>
             <Icon path={ICONS.channels} />
             <div className="label">Nomor WhatsApp</div>
             <div className="value">{stats.channels}</div>
             <div className="label">{stats.channelsConnected} terhubung</div>
           </div>
-          <div className="kpi-card">
+          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/conversations")}>
             <Icon path={ICONS.conversations} />
-            <div className="label">Percakapan ({range.preset === "custom" ? "custom" : range.preset === "today" ? "hari ini" : range.preset === "yesterday" ? "kemarin" : range.preset === "week" ? "minggu ini" : "bulan ini"})</div>
+            <div className="label">Percakapan ({presetLabel(range.preset)})</div>
             <div className="value">{stats.conversations}</div>
             <div className="label">{stats.openConversations} masih terbuka</div>
           </div>
-          <div className="kpi-card">
+          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/conversations")}>
             <Icon path={ICONS.messages} />
             <div className="label">Pesan Terkirim</div>
             <div className="value">{stats.messagesSent}</div>
           </div>
-          <div className="kpi-card">
+          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/contacts")}>
             <Icon path={ICONS.contacts} />
             <div className="label">Kontak Baru</div>
             <div className="value">{stats.contacts}</div>
           </div>
-          <div className="kpi-card">
+          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/products")}>
             <Icon path={ICONS.products} />
             <div className="label">Produk</div>
             <div className="value">{stats.products}</div>
           </div>
-          <div className="kpi-card">
+          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/departments")}>
             <Icon path={ICONS.departments} />
             <div className="label">Departemen</div>
             <div className="value">{stats.departments}</div>
@@ -98,14 +108,16 @@ export default function Overview() {
         </div>
       )}
 
-      <div className="panel">
-        <h2>Langkah selanjutnya</h2>
-        <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6 }}>
-          Isi kredensial WhatsApp Business API (Phone Number ID &amp; Access Token dari Meta) lalu
-          daftarkan nomor pertama kamu di halaman <b>Nomor WhatsApp</b> supaya percakapan &amp;
-          broadcast bisa mulai berjalan.
-        </p>
-      </div>
+      {stats && !stats.channels && (
+        <div className="panel">
+          <h2>Langkah selanjutnya</h2>
+          <p style={{ fontSize: 13.5, color: "var(--text-muted)", lineHeight: 1.6 }}>
+            Isi kredensial WhatsApp Business API (Phone Number ID &amp; Access Token dari Meta) lalu
+            daftarkan nomor pertama kamu di halaman <b>Nomor WhatsApp</b> supaya percakapan &amp;
+            broadcast bisa mulai berjalan.
+          </p>
+        </div>
+      )}
     </div>
   );
 }

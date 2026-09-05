@@ -24,6 +24,8 @@ export default function DateRangeFilter({ value, onChange }) {
     onChange(next);
   };
 
+  const invalidRange = Boolean(value.from && value.to && value.from > value.to);
+
   return (
     <div className="date-range-filter">
       <div className="date-range-pills">
@@ -40,9 +42,14 @@ export default function DateRangeFilter({ value, onChange }) {
       </div>
       {customOpen && (
         <div className="date-range-custom">
-          <input type="date" value={value.from} onChange={updateCustom("from")} />
+          <input type="date" value={value.from} max={value.to || undefined} onChange={updateCustom("from")} />
           <span>—</span>
-          <input type="date" value={value.to} onChange={updateCustom("to")} />
+          <input type="date" value={value.to} min={value.from || undefined} onChange={updateCustom("to")} />
+          {invalidRange && (
+            <span style={{ color: "var(--danger, #dc2626)", fontSize: 12 }}>
+              Tanggal "dari" tidak boleh lebih besar dari "sampai".
+            </span>
+          )}
         </div>
       )}
     </div>

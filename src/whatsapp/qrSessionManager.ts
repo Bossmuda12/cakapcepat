@@ -45,6 +45,21 @@ interface ActiveSession {
 
 const activeSessions = new Map<string, ActiveSession>();
 
+// P-12: hitungan percobaan reconnect berturut-turut per channel — dipakai utk
+// exponential backoff & batas maksimal percobaan (lihat handleConnectionUpdate).
+const reconnectAttempts = new Map<string, number>();
+const MAX_RECONNECT_ATTEMPTS = 10;
+const BASE_RECONNECT_DELAY_MS = 3000;
+const MAX_RECONNECT_DELAY_MS = 5 * 60 * 1000;
+
+// P-12: pengunci in-memory supaya startQrSession untuk channelId yang SAMA
+// tidak pernah berjalan dua kali bersamaan (mis. dipanggil manual dari
+// dashboard tepat saat resumeAllQrSessions() masih jalan saat startup, atau
+// race antara retry reconnect otomatis dengan klik "mulai ulang" manual).
+// Isinya Promise dari proses start yang SEDANG berjalan — panggilan lain untuk
+// channelId yang sama ikut menunggu Promise itu, bukan membuat socket baru.
+const startingSessions = new Map<string, Promise<void>>();
+
 // --- Auth-state Baileys disimpan di Postgres, bukan file lokal (lihat catatan di atas). ---
 
 async function readAuthKey(channelId: string, keyName: string): Promise<any> {
@@ -159,12 +174,37 @@ interface StartOptions {
  * Mulai (atau sambungkan ulang) sesi QR/pairing untuk 1 channel. Aman
  * dipanggil berkali-kali — sesi lama (kalau ada) ditutup dulu di memory
  * sebelum yang baru dibuat.
+ *
+ * P-12: dilindungi pengunci `startingSessions` — kalau sudah ada proses start
+ * yang sedang berjalan untuk channelId ini, panggilan ini ikut menunggu
+ * Promise yang sama alih-alih memicu pembuatan socket kedua yang tumpang tindih.
  */
-export async function startQrSession(
+export function startQrSession(
   channelId: string,
   organizationId: string,
   opts: StartOptions = {}
 ): Promise<void> {
+  const inFlight = startingSessions.get(channelId);
+  if (inFlight) return inFlight;
+
+  const startPromise = doStartQrSession(channelId, organizationId, opts).finally(() => {
+    // Cuma lepas kunci kalau ini masih Promise yang sama (jaga-jaga andai
+    // ada penggantian map di tengah jalan — seharusnya tidak terjadi, tapi aman).
+    if (startingSessions.get(channelId) === startPromise) {
+      startingSessions.delete(channelId);
+    }
+  });
+  startingSessions.set(channelId, startPromise);
+  return startPromise;
+}
+
+async function doStartQrSession(
+  channelId: string,
+  organizationId: string,
+  opts: StartOptions
+): Promise<void> {
+  // Kalau sudah ada sesi aktif untuk channel ini, tutup socket lama dulu
+  // sebelum membuat yang baru.
   stopInMemory(channelId);
 
   const { state, saveCreds } = await usePostgresAuthState(channelId);
@@ -242,6 +282,8 @@ async function handleConnectionUpdate(
   }
 
   if (connection === "open") {
+    // P-12: koneksi berhasil terbuka lagi — reset hitungan percobaan reconnect.
+    reconnectAttempts.delete(channelId);
     const meNumber = sock.user?.id?.split(":")[0]?.split("@")[0] ?? null;
     await updateChannelConnState(channelId, {
       connection_state: "connected",
@@ -258,6 +300,7 @@ async function handleConnectionUpdate(
     const loggedOut = statusCode === DisconnectReason.loggedOut;
 
     if (loggedOut) {
+      reconnectAttempts.delete(channelId);
       await updateChannelConnState(channelId, {
         connection_state: "logged_out",
         status: "disconnected",
@@ -267,13 +310,34 @@ async function handleConnectionUpdate(
       await pool.query("DELETE FROM whatsapp_qr_auth_keys WHERE channel_id = $1", [channelId]);
       console.log(`[qr-session] Channel ${channelId} logout dari HP — perlu scan/pairing ulang.`);
     } else {
+      // P-12: exponential backoff — percobaan ke-n menunggu
+      // min(3000 * 2^(n-1), 5 menit), dibatasi maksimal MAX_RECONNECT_ATTEMPTS
+      // kali berturut-turut supaya tidak reconnect-loop selamanya kalau
+      // nomornya memang bermasalah (mis. koneksi diblokir terus-menerus).
+      const attempt = (reconnectAttempts.get(channelId) ?? 0) + 1;
+
+      if (attempt > MAX_RECONNECT_ATTEMPTS) {
+        reconnectAttempts.delete(channelId);
+        await updateChannelConnState(channelId, { connection_state: "error", status: "disconnected" });
+        console.error(
+          `[qr-session] Channel ${channelId} GAGAL menyambung ulang setelah ${MAX_RECONNECT_ATTEMPTS} ` +
+            `percobaan berturut-turut — berhenti mencoba otomatis. Perlu disambungkan manual ulang dari dashboard.`
+        );
+        return;
+      }
+
+      reconnectAttempts.set(channelId, attempt);
+      const delay = Math.min(BASE_RECONNECT_DELAY_MS * 2 ** (attempt - 1), MAX_RECONNECT_DELAY_MS);
       await updateChannelConnState(channelId, { connection_state: "reconnecting", status: "disconnected" });
-      console.warn(`[qr-session] Channel ${channelId} terputus, mencoba menyambung ulang dalam 3 detik...`);
+      console.warn(
+        `[qr-session] Channel ${channelId} terputus, mencoba menyambung ulang ` +
+          `(percobaan ${attempt}/${MAX_RECONNECT_ATTEMPTS}) dalam ${delay}ms...`
+      );
       setTimeout(() => {
         startQrSession(channelId, organizationId).catch((err) =>
           console.error(`[qr-session] Gagal menyambung ulang channel ${channelId}:`, err)
         );
-      }, 3000);
+      }, delay);
     }
   }
 }
@@ -288,7 +352,30 @@ async function handleIncomingBaileysMessage(
   const jid = m.key.remoteJid;
   if (!jid || jid.endsWith("@g.us") || jid === "status@broadcast") return; // lewati grup & status
 
-  const waNumber = jid.split("@")[0];
+  // P-7: JID modern WhatsApp bisa berbentuk "<...>@lid" — itu IDENTITAS
+  // internal (linked ID) Meta, BUKAN nomor telepon. Kalau begitu, coba ambil
+  // nomor telepon ASLI dari field alternatif yang Baileys sisipkan di message
+  // key (senderPn / participantPn) — field ini belum tentu ada di semua versi
+  // tipe Baileys (proto.IMessageKey resmi belum mendeklarasikannya), jadi
+  // diakses defensif lewat `as any` + optional chaining. Kalau nomor asli
+  // tetap tidak ketemu, pesan TETAP disimpan (jangan sampai chat hilang dari
+  // dashboard) — waNumber dicatat apa adanya (isi @lid-nya) plus warning jelas
+  // supaya ketahuan di log kalau ada kontak "aneh" yang bukan nomor telepon asli.
+  let waNumber = jid.split("@")[0];
+  if (jid.endsWith("@lid")) {
+    const keyAny = m.key as any;
+    const realPhoneJid: string | undefined = keyAny?.senderPn ?? keyAny?.participantPn ?? undefined;
+    if (realPhoneJid) {
+      waNumber = String(realPhoneJid).split("@")[0];
+    } else {
+      console.warn(
+        `[qr-session] Channel ${channelId}: pesan masuk dari JID @lid (${jid}) tanpa nomor telepon asli ` +
+          `(senderPn/participantPn tidak ada di payload) — tetap disimpan dengan waNumber="${waNumber}", ` +
+          `KEMUNGKINAN BUKAN nomor telepon valid.`
+      );
+    }
+  }
+
   const textBody =
     m.message?.conversation ??
     m.message?.extendedTextMessage?.text ??
@@ -299,14 +386,47 @@ async function handleIncomingBaileysMessage(
   // dilewati) — cukup untuk kebutuhan pencatatan chat & klasifikasi order.
   if (!textBody) return;
 
-  const { conversationId } = await ingestInboundMessage({
+  // S-11/P-27: info iklan Click-to-WhatsApp (CTWA) yang dibawa dari jalur QR.
+  // Baileys menaruhnya di contextInfo.externalAdReply pesan pertama yang
+  // datang dari klik iklan — mirip objek "referral" di webhook Cloud API
+  // (lihat webhook.ts), tapi lewat struktur berbeda karena bukan lewat Graph
+  // API resmi. Diakses defensif per jenis pesan karena tidak semuanya punya
+  // contextInfo.
+  const contextInfo =
+    m.message?.extendedTextMessage?.contextInfo ??
+    m.message?.imageMessage?.contextInfo ??
+    m.message?.videoMessage?.contextInfo ??
+    undefined;
+  const externalAdReply = contextInfo?.externalAdReply ?? undefined;
+  const adSourceUrl = externalAdReply?.sourceUrl ?? null;
+  const ctwaClid = externalAdReply?.ctwaClid ?? null;
+  if (ctwaClid || adSourceUrl) {
+    console.log(
+      `[qr-session] Channel ${channelId}: chat ini berasal dari iklan CTWA (jalur QR) — ` +
+        `ctwaClid=${ctwaClid}, sourceUrl=${adSourceUrl}, sourceId=${externalAdReply?.sourceId}, ` +
+        `title=${externalAdReply?.title}`
+    );
+  }
+
+  const { conversationId, duplicate } = await ingestInboundMessage({
     channelId,
     organizationId,
     waNumber,
     contactName: m.pushName ?? null,
     waMessageId: m.key.id ?? null,
     textBody,
+    ctwaClid,
+    adSourceUrl,
   });
+
+  // P-3: pesan kembar (event Baileys yang diproses dua kali, mis. setelah
+  // reconnect) tidak boleh memicu auto-reply lagi.
+  if (duplicate) {
+    console.warn(
+      `[qr-session] Channel ${channelId}: pesan duplikat dilewati (wa_message_id=${m.key.id}), auto-reply tidak dipicu.`
+    );
+    return;
+  }
 
   await maybeAutoReply({
     organizationId,

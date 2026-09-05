@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 
 export const automationsRouter = Router();
 
@@ -26,7 +26,7 @@ const createAutomationSchema = z.object({
   isActive: z.boolean().default(true),
 });
 
-automationsRouter.post("/automations", requireAuth, async (req: AuthedRequest, res) => {
+automationsRouter.post("/automations", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = createAutomationSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { channelId, triggerType, config, isActive } = parsed.data;
@@ -74,7 +74,7 @@ automationsRouter.patch("/automations/:id", requireAuth, async (req: AuthedReque
   res.json(rows[0]);
 });
 
-automationsRouter.delete("/automations/:id", requireAuth, async (req: AuthedRequest, res) => {
+automationsRouter.delete("/automations/:id", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const { rowCount } = await pool.query(
     `DELETE FROM automations a
      USING whatsapp_channels wc

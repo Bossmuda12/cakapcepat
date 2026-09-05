@@ -97,17 +97,29 @@ export default function Orders() {
   const [summary, setSummary] = useState(null);
   const [orders, setOrders] = useState(null);
   const [statusFilter, setStatusFilter] = useState("");
+  const [products, setProducts] = useState([]);
+  const [productFilter, setProductFilter] = useState("");
   const [error, setError] = useState("");
   const [downloading, setDownloading] = useState(false);
 
+  useEffect(() => {
+    api
+      .get("/products")
+      .then((data) => setProducts(Array.isArray(data) ? data : data?.items || []))
+      .catch(() => {});
+  }, []);
+
   const load = async () => {
     try {
+      const params = new URLSearchParams({ from: range.from, to: range.to });
+      if (statusFilter) params.set("status", statusFilter);
+      if (productFilter) params.set("productId", productFilter);
       const [s, o] = await Promise.all([
         api.get(`/orders/summary?from=${range.from}&to=${range.to}`),
-        api.get(`/orders?from=${range.from}&to=${range.to}${statusFilter ? `&status=${statusFilter}` : ""}`),
+        api.get(`/orders?${params.toString()}`),
       ]);
       setSummary(s);
-      setOrders(o);
+      setOrders(Array.isArray(o) ? o : o?.items || []);
     } catch (err) {
       setError(err.message);
     }
@@ -116,7 +128,7 @@ export default function Orders() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.from, range.to, statusFilter]);
+  }, [range.from, range.to, statusFilter, productFilter]);
 
   const download = async () => {
     setDownloading(true);
@@ -125,6 +137,9 @@ export default function Orders() {
       const res = await fetch(`/api/orders/export.csv?from=${range.from}&to=${range.to}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       });
+      if (res.status === 401) {
+        throw new Error("Sesi login sudah habis. Silakan login ulang lalu coba download lagi.");
+      }
       if (!res.ok) throw new Error(`Gagal download laporan (${res.status})`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -154,6 +169,14 @@ export default function Orders() {
       <div className="toolbar" style={{ marginBottom: 18 }}>
         <div />
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} style={{ maxWidth: 200 }}>
+            <option value="">Semua Produk</option>
+            {products.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
           <DateRangeFilter value={range} onChange={setRange} />
           <button className="btn" type="button" disabled={downloading} onClick={download}>
             {downloading ? "Menyiapkan..." : "Download Laporan (CSV)"}

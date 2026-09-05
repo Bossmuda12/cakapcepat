@@ -12,6 +12,10 @@ export default function KnowledgeBase() {
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
 
+  const [deletingRow, setDeletingRow] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   const load = async () => {
     try {
       const [kb, p] = await Promise.all([api.get("/knowledge-base"), api.get("/products")]);
@@ -48,12 +52,18 @@ export default function KnowledgeBase() {
     }
   };
 
-  const remove = async (id) => {
+  const confirmDelete = async () => {
+    if (!deletingRow) return;
+    setDeleteBusy(true);
+    setDeleteError("");
     try {
-      await api.del(`/knowledge-base/${id}`);
+      await api.del(`/knowledge-base/${deletingRow.id}`);
+      setDeletingRow(null);
       await load();
     } catch (err) {
-      setError(err.message);
+      setDeleteError(err.message);
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -126,7 +136,7 @@ export default function KnowledgeBase() {
                     {r.content.length > 140 ? r.content.slice(0, 140) + "…" : r.content}
                   </td>
                   <td>
-                    <button className="btn secondary" onClick={() => remove(r.id)}>
+                    <button className="btn secondary" onClick={() => setDeletingRow(r)}>
                       Hapus
                     </button>
                   </td>
@@ -136,6 +146,38 @@ export default function KnowledgeBase() {
           </table>
         )}
       </div>
+
+      <Modal open={!!deletingRow} onClose={() => setDeletingRow(null)} title="Hapus materi knowledge base?" width={440}>
+        {deletingRow && (
+          <div>
+            {deleteError && <div className="error-box">{deleteError}</div>}
+            <p style={{ fontSize: 14 }}>
+              Yakin mau menghapus materi <strong>{deletingRow.title}</strong>? Tindakan ini tidak bisa
+              dibatalkan.
+            </p>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ flex: 1 }}
+                onClick={() => setDeletingRow(null)}
+                disabled={deleteBusy}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                style={{ flex: 1 }}
+                onClick={confirmDelete}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? "Menghapus..." : "Ya, Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 
 export const knowledgeBaseRouter = Router();
 
@@ -23,10 +23,22 @@ const createEntrySchema = z.object({
   productId: z.string().uuid().optional(),
 });
 
-knowledgeBaseRouter.post("/knowledge-base", requireAuth, async (req: AuthedRequest, res) => {
+knowledgeBaseRouter.post("/knowledge-base", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = createEntrySchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { title, content, productId } = parsed.data;
+
+  // P-20: pastikan productId (kalau diisi) benar-benar produk milik
+  // organization pemanggil, bukan produk organization lain.
+  if (productId) {
+    const { rows: productRows } = await pool.query(
+      "SELECT id FROM products WHERE id = $1 AND organization_id = $2",
+      [productId, req.auth!.organizationId]
+    );
+    if (!productRows[0]) {
+      return res.status(400).json({ error: "Produk (productId) tidak ditemukan di organization ini" });
+    }
+  }
 
   const { rows } = await pool.query(
     `INSERT INTO knowledge_base_entries (organization_id, product_id, title, content)
@@ -37,7 +49,7 @@ knowledgeBaseRouter.post("/knowledge-base", requireAuth, async (req: AuthedReque
   res.status(201).json(rows[0]);
 });
 
-knowledgeBaseRouter.delete("/knowledge-base/:id", requireAuth, async (req: AuthedRequest, res) => {
+knowledgeBaseRouter.delete("/knowledge-base/:id", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const { rowCount } = await pool.query(
     "DELETE FROM knowledge_base_entries WHERE id = $1 AND organization_id = $2",
     [req.params.id, req.auth!.organizationId]

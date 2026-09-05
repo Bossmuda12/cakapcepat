@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { api } from "../api";
 import { useRealtime } from "../useRealtime";
+import Modal from "../components/Modal";
+import DateRangeFilter from "../components/DateRangeFilter";
+import { defaultRange } from "../dateRangePresets";
+
+const PAGE_SIZE = 50;
 
 function formatTime(ts) {
   if (!ts) return "";
@@ -13,7 +18,12 @@ function formatTime(ts) {
 }
 
 export default function Conversations() {
+  const [range, setRange] = useState(defaultRange());
   const [rows, setRows] = useState(null);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [searchInput, setSearchInput] = useState("");
+  const [q, setQ] = useState("");
   const [selectedId, setSelectedId] = useState(null);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState("");
@@ -22,60 +32,102 @@ export default function Conversations() {
   const [sending, setSending] = useState(false);
   const [teamMembers, setTeamMembers] = useState([]);
   const [ownerFilter, setOwnerFilter] = useState(""); // "" = semua tim; klik nama -> hanya obrolan nomor dia
+  const [products, setProducts] = useState([]);
+  const [productFilter, setProductFilter] = useState(""); // "" = semua produk
+
+  const [archiveBusy, setArchiveBusy] = useState(false);
+  const [deletingConversation, setDeletingConversation] = useState(false);
+  const [deleteConvBusy, setDeleteConvBusy] = useState(false);
+  const [deleteConvError, setDeleteConvError] = useState("");
+  const [deletingMessage, setDeletingMessage] = useState(null);
+  const [deleteMsgBusy, setDeleteMsgBusy] = useState(false);
+  const [deleteMsgError, setDeleteMsgError] = useState("");
+
   const scrollRef = useRef(null);
+  const convReqIdRef = useRef(0);
+  const msgReqIdRef = useRef(0);
 
   useEffect(() => {
     api
       .get("/users")
       .then(setTeamMembers)
       .catch(() => {}); // gagal load daftar tim tidak boleh menghalangi halaman utama
+    api
+      .get("/products")
+      .then((data) => setProducts(Array.isArray(data) ? data : data?.items || []))
+      .catch(() => {});
   }, []);
 
-  const loadConversations = useCallback(async (ownerUserId) => {
+  // Debounce kotak pencarian ~300ms supaya tidak nembak API di tiap ketikan.
+  useEffect(() => {
+    const t = setTimeout(() => setQ(searchInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Ganti filter apa pun -> mulai lagi dari halaman pertama.
+  useEffect(() => {
+    setOffset(0);
+  }, [ownerFilter, productFilter, q, range.from, range.to]);
+
+  // Hanya respons dari permintaan TERAKHIR yang boleh menulis ke state (request id
+  // guard) supaya polling, realtime, dan pergantian filter yang datang berbarengan
+  // tidak saling menimpa data satu sama lain.
+  const loadConversations = useCallback(async () => {
+    const myId = ++convReqIdRef.current;
     try {
-      const query = ownerUserId ? `?ownerUserId=${ownerUserId}` : "";
-      const data = await api.get(`/conversations${query}`);
-      setRows(data);
-      return data;
+      const params = new URLSearchParams();
+      params.set("limit", String(PAGE_SIZE));
+      params.set("offset", String(offset));
+      if (range.from) params.set("from", range.from);
+      if (range.to) params.set("to", range.to);
+      if (ownerFilter) params.set("ownerUserId", ownerFilter);
+      if (productFilter) params.set("productId", productFilter);
+      if (q) params.set("q", q);
+      const data = await api.get(`/conversations?${params.toString()}`);
+      if (myId !== convReqIdRef.current) return; // ada permintaan lebih baru, buang hasil ini
+      // Bertahan terhadap dua bentuk respons: array polos (lama) atau {items,total,...} (baru).
+      const items = Array.isArray(data) ? data : data?.items || [];
+      const totalCount = Array.isArray(data) ? items.length : data?.total ?? items.length;
+      setRows(items);
+      setTotal(totalCount);
+      setSelectedId((prev) => (prev && items.some((r) => r.id === prev) ? prev : items[0]?.id ?? null));
+      setError("");
     } catch (err) {
-      setError(err.message);
-      return [];
+      if (myId === convReqIdRef.current) setError(err.message);
     }
-  }, []);
+  }, [offset, range.from, range.to, ownerFilter, productFilter, q]);
+
+  useEffect(() => {
+    loadConversations();
+  }, [loadConversations]);
 
   const loadMessages = useCallback(async (id) => {
     if (!id) return;
+    const myId = ++msgReqIdRef.current;
     try {
       const data = await api.get(`/conversations/${id}/messages`);
-      setMessages(data);
+      if (myId !== msgReqIdRef.current) return;
+      setMessages(Array.isArray(data) ? data : data?.items || []);
     } catch (err) {
-      setSendError(err.message);
+      if (myId === msgReqIdRef.current) setSendError(err.message);
     }
   }, []);
-
-  useEffect(() => {
-    // Ganti filter tim -> daftar percakapan lama sudah tidak relevan, dan
-    // percakapan yang lagi dibuka bisa jadi bukan milik tim yang baru dipilih.
-    setSelectedId(null);
-    loadConversations(ownerFilter).then((data) => {
-      if (data.length > 0) setSelectedId(data[0].id);
-    });
-    // Polling tetap dipertahankan sebagai fallback kalau koneksi WebSocket putus.
-    const interval = setInterval(() => loadConversations(ownerFilter), 8000);
-    return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerFilter]);
 
   // Push real-time: begitu ada pesan/percakapan baru di server, langsung
   // refetch daftar percakapan dan (kalau relevan) thread pesan yang lagi dibuka.
   useRealtime(() => {
-    loadConversations(ownerFilter);
+    loadConversations();
     if (selectedId) loadMessages(selectedId);
   });
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId) {
+      setMessages([]);
+      return;
+    }
     loadMessages(selectedId);
+    // Satu polling saja sebagai fallback kalau koneksi realtime putus — daftar
+    // percakapan sudah cukup diperbarui lewat realtime + perubahan filter/halaman.
     const interval = setInterval(() => loadMessages(selectedId), 5000);
     return () => clearInterval(interval);
   }, [selectedId, loadMessages]);
@@ -95,7 +147,7 @@ export default function Conversations() {
       await api.post(`/conversations/${selectedId}/messages`, { body: draft });
       setDraft("");
       await loadMessages(selectedId);
-      await loadConversations(ownerFilter);
+      await loadConversations();
     } catch (err) {
       setSendError(err.message);
     } finally {
@@ -107,24 +159,79 @@ export default function Conversations() {
     if (!selectedId) return;
     try {
       await api.post(`/conversations/${selectedId}/pipeline`, { stage: "closing_won" });
-      await loadConversations(ownerFilter);
+      await loadConversations();
     } catch (err) {
       setSendError(err.message);
+    }
+  };
+
+  const toggleArchive = async () => {
+    if (!selected) return;
+    setArchiveBusy(true);
+    setSendError("");
+    try {
+      const action = selected.status === "archived" ? "unarchive" : "archive";
+      await api.post(`/conversations/${selected.id}/${action}`, {});
+      await loadConversations();
+    } catch (err) {
+      setSendError(err.message);
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+
+  const confirmDeleteConversation = async () => {
+    if (!selected) return;
+    setDeleteConvBusy(true);
+    setDeleteConvError("");
+    try {
+      await api.del(`/conversations/${selected.id}`);
+      setDeletingConversation(false);
+      setSelectedId(null);
+      await loadConversations();
+    } catch (err) {
+      setDeleteConvError(err.message);
+    } finally {
+      setDeleteConvBusy(false);
+    }
+  };
+
+  const confirmDeleteMessage = async () => {
+    if (!deletingMessage || !selectedId) return;
+    setDeleteMsgBusy(true);
+    setDeleteMsgError("");
+    try {
+      await api.del(`/conversations/${selectedId}/messages/${deletingMessage.id}`);
+      setDeletingMessage(null);
+      await loadMessages(selectedId);
+    } catch (err) {
+      setDeleteMsgError(err.message);
+    } finally {
+      setDeleteMsgBusy(false);
     }
   };
 
   const statusBadge = (status) => {
     if (status === "open") return <span className="badge green">Terbuka</span>;
     if (status === "pending") return <span className="badge yellow">Pending</span>;
+    if (status === "archived") return <span className="badge gray">Diarsipkan</span>;
     return <span className="badge gray">Tertutup</span>;
   };
 
+  const rangeStart = total === 0 ? 0 : offset + 1;
+  const rangeEnd = Math.min(offset + (rows?.length || 0), total);
+
   return (
     <div>
-      <h1>Percakapan</h1>
-      <p className="page-subtitle">
-        Inbox WhatsApp semua nomor tim. Klik nama anggota tim di bawah untuk lihat obrolan nomor dia saja.
-      </p>
+      <div className="toolbar" style={{ marginBottom: 6 }}>
+        <div>
+          <h1>Percakapan</h1>
+          <p className="page-subtitle">
+            Inbox WhatsApp semua nomor tim. Klik nama anggota tim di bawah untuk lihat obrolan nomor dia saja.
+          </p>
+        </div>
+        <DateRangeFilter value={range} onChange={setRange} />
+      </div>
 
       {teamMembers.length > 0 && (
         <div className="team-filter-row">
@@ -148,6 +255,24 @@ export default function Conversations() {
         </div>
       )}
 
+      <div className="toolbar" style={{ margin: "10px 0 14px" }}>
+        <input
+          type="text"
+          placeholder="Cari nama atau nomor..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          style={{ maxWidth: 260 }}
+        />
+        <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} style={{ maxWidth: 220 }}>
+          <option value="">Semua Produk</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {error && <div className="error-box">{error}</div>}
 
       <div className="inbox-shell">
@@ -156,7 +281,7 @@ export default function Conversations() {
             <div className="loading-block">Memuat...</div>
           ) : rows.length === 0 ? (
             <div className="empty-state">
-              {ownerFilter ? "Belum ada percakapan lewat nomor anggota tim ini." : "Belum ada percakapan."}
+              {ownerFilter || productFilter || q ? "Tidak ada percakapan yang cocok dengan filter ini." : "Belum ada percakapan."}
             </div>
           ) : (
             rows.map((r) => (
@@ -177,6 +302,31 @@ export default function Conversations() {
               </button>
             ))
           )}
+          {rows !== null && total > 0 && (
+            <div className="pagination-bar">
+              <span>
+                Menampilkan {rangeStart}–{rangeEnd} dari {total}
+              </span>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={offset === 0}
+                  onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
+                >
+                  Sebelumnya
+                </button>
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={offset + PAGE_SIZE >= total}
+                  onClick={() => setOffset((o) => o + PAGE_SIZE)}
+                >
+                  Berikutnya
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="inbox-thread">
@@ -192,9 +342,24 @@ export default function Conversations() {
                     {selected.ctwa_clid && <span className="badge yellow"> Dari iklan CTWA</span>}
                   </div>
                 </div>
-                <button className="btn secondary" onClick={markClosingWon}>
-                  Tandai Closing
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button className="btn secondary" onClick={markClosingWon}>
+                    Tandai Closing
+                  </button>
+                  <button className="btn secondary" disabled={archiveBusy} onClick={toggleArchive}>
+                    {archiveBusy ? "..." : selected.status === "archived" ? "Buka Arsip" : "Arsipkan"}
+                  </button>
+                  <button
+                    className="btn secondary"
+                    style={{ color: "var(--danger)" }}
+                    onClick={() => {
+                      setDeleteConvError("");
+                      setDeletingConversation(true);
+                    }}
+                  >
+                    Hapus
+                  </button>
+                </div>
               </div>
 
               <div className="inbox-messages" ref={scrollRef}>
@@ -202,12 +367,40 @@ export default function Conversations() {
                   <div className="empty-state">Belum ada pesan.</div>
                 ) : (
                   messages.map((m) => (
-                    <div key={m.id} className={`bubble ${m.direction === "outbound" ? "out" : "in"}`}>
-                      <div className="bubble-text">{m.content?.body}</div>
-                      <div className="bubble-meta">
-                        {m.sender_type === "ai" ? "AI · " : ""}
-                        {formatTime(m.created_at)}
+                    <div key={m.id} className={`bubble-row ${m.direction === "outbound" ? "out" : "in"}`}>
+                      {m.direction !== "outbound" && (
+                        <button
+                          type="button"
+                          className="bubble-delete"
+                          title="Hapus pesan"
+                          onClick={() => {
+                            setDeleteMsgError("");
+                            setDeletingMessage(m);
+                          }}
+                        >
+                          Hapus
+                        </button>
+                      )}
+                      <div className={`bubble ${m.direction === "outbound" ? "out" : "in"}`}>
+                        <div className="bubble-text">{m.content?.body}</div>
+                        <div className="bubble-meta">
+                          {m.sender_type === "ai" ? "AI · " : ""}
+                          {formatTime(m.created_at)}
+                        </div>
                       </div>
+                      {m.direction === "outbound" && (
+                        <button
+                          type="button"
+                          className="bubble-delete"
+                          title="Hapus pesan"
+                          onClick={() => {
+                            setDeleteMsgError("");
+                            setDeletingMessage(m);
+                          }}
+                        >
+                          Hapus
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
@@ -228,6 +421,72 @@ export default function Conversations() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={deletingConversation}
+        onClose={() => setDeletingConversation(false)}
+        title="Hapus percakapan ini?"
+        width={460}
+      >
+        {selected && (
+          <div>
+            {deleteConvError && <div className="error-box">{deleteConvError}</div>}
+            <p style={{ fontSize: 14 }}>
+              Yakin mau menghapus percakapan dengan <strong>{selected.contact_name || selected.wa_number}</strong>?
+              Seluruh riwayat pesannya ikut terhapus permanen dan tidak bisa dibatalkan.
+            </p>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ flex: 1 }}
+                onClick={() => setDeletingConversation(false)}
+                disabled={deleteConvBusy}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                style={{ flex: 1 }}
+                onClick={confirmDeleteConversation}
+                disabled={deleteConvBusy}
+              >
+                {deleteConvBusy ? "Menghapus..." : "Ya, Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!deletingMessage} onClose={() => setDeletingMessage(null)} title="Hapus pesan ini?" width={420}>
+        {deletingMessage && (
+          <div>
+            {deleteMsgError && <div className="error-box">{deleteMsgError}</div>}
+            <p style={{ fontSize: 14 }}>Pesan ini akan dihapus permanen dari riwayat percakapan.</p>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ flex: 1 }}
+                onClick={() => setDeletingMessage(null)}
+                disabled={deleteMsgBusy}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                style={{ flex: 1 }}
+                onClick={confirmDeleteMessage}
+                disabled={deleteMsgBusy}
+              >
+                {deleteMsgBusy ? "Menghapus..." : "Ya, Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

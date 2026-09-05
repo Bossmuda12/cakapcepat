@@ -28,8 +28,8 @@ function LeadTable({ title, icon, leads, emptyText, tone }) {
             </tr>
           </thead>
           <tbody>
-            {leads.map((l, i) => (
-              <tr key={i}>
+            {leads.map((l) => (
+              <tr key={l.id || `${l.waNumber}-${l.contactName}-${l.reason}`}>
                 <td>{l.contactName}</td>
                 <td>{l.waNumber}</td>
                 <td>{l.role || "—"}</td>
@@ -248,8 +248,8 @@ export default function Leads() {
               </tr>
             </thead>
             <tbody>
-              {flags.map((f, i) => (
-                <tr key={i}>
+              {flags.map((f) => (
+                <tr key={f.id || `${f.contactName}-${f.issue}`}>
                   <td>{f.contactName}</td>
                   <td>{f.issue}</td>
                   <td>

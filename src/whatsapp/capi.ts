@@ -40,6 +40,17 @@ export async function reportConversionToMeta({
     return null;
   }
 
+  // P-8: cegah konversi dobel — kalau conversation ini SUDAH pernah berhasil
+  // dilaporkan ke Meta (conversion_reported = true), jangan kirim lagi. Tanpa
+  // ini, klik ganda di dashboard / retry otomatis bisa mengirim event yang
+  // sama berkali-kali ke Meta (merusak angka hasil closing di Events Manager).
+  if (row.conversion_reported) {
+    console.log(
+      `[capi] Conversation ${conversationId} sudah pernah dilaporkan ke Meta (conversion_reported=true), dilewati.`
+    );
+    return null;
+  }
+
   // Kredensial CAPI: utamakan yang diatur lewat dashboard (tabel organization),
   // fallback ke env var kalau belum diisi lewat dashboard.
   const pixelId: string | undefined = row.capi_pixel_id || config.capi.pixelId || undefined;
@@ -57,11 +68,18 @@ export async function reportConversionToMeta({
   // sinyalnya makin akurat (lihat catatan awal permintaan fitur ini).
   const normalizedPhone = row.wa_number ? row.wa_number.replace(/[^0-9]/g, "") : null;
 
+  // P-8: event_id unik & deterministik (bukan random) supaya kalau request ini
+  // ternyata terkirim dua kali (mis. retry di lapisan lain sebelum kolom
+  // conversion_reported sempat ke-update), Meta bisa men-dedup event yang
+  // sama sendiri berdasarkan event_id ini di sisi mereka.
+  const eventId = `${conversationId}:${eventName}`;
+
   const payload = {
     data: [
       {
         event_name: eventName,
         event_time: Math.floor(Date.now() / 1000),
+        event_id: eventId,
         action_source: "business_messaging",
         messaging_channel: "whatsapp",
         ctwa_clid: row.ctwa_clid,
@@ -73,12 +91,31 @@ export async function reportConversionToMeta({
 
   const url = `https://graph.facebook.com/${config.whatsapp.graphApiVersion}/${pixelId}/events?access_token=${accessToken}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  const data = await res.json();
+  // P-8: fetch dibungkus try/catch — kegagalan JARINGAN (bukan penolakan dari
+  // Meta) tidak boleh melempar exception ke pemanggil (routes/orders.ts &
+  // routes/conversations.ts). Tetap dicatat ke ad_conversion_events (dengan
+  // response_status null supaya beda dari kegagalan HTTP biasa) sebagai jejak
+  // audit bahwa percobaan ini memang gagal terkirim, lalu kembalikan null —
+  // sama seperti kasus "tidak ada yang perlu dilaporkan".
+  let res: Response;
+  let data: unknown;
+  try {
+    res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    data = await res.json();
+  } catch (err) {
+    const message = String((err as Error)?.message ?? err);
+    console.error(`[capi] Gagal menghubungi Meta CAPI untuk conversation ${conversationId}:`, err);
+    await pool.query(
+      `INSERT INTO ad_conversion_events (conversation_id, event_name, ctwa_clid, payload_sent, response_status)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [conversationId, eventName, row.ctwa_clid, JSON.stringify({ ...payload, _error: message }), null]
+    );
+    return null;
+  }
 
   await pool.query(
     `INSERT INTO ad_conversion_events (conversation_id, event_name, ctwa_clid, payload_sent, response_status)

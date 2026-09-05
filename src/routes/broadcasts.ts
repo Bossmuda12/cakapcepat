@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 import { enqueueBroadcast } from "../queue/broadcastQueue";
 
 export const broadcastsRouter = Router();
@@ -14,11 +14,21 @@ const createBroadcastSchema = z.object({
   targetLabel: z.string().optional(),
 });
 
-broadcastsRouter.post("/broadcasts", requireAuth, async (req: AuthedRequest, res) => {
+broadcastsRouter.post("/broadcasts", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = createBroadcastSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { channelId, name, templateName, templateParams, targetLabel } = parsed.data;
   const organizationId = req.auth!.organizationId;
+
+  // P-5: pastikan channelId benar-benar milik organization pemanggil SEBELUM
+  // insert broadcast — tanpa ini, siapa pun yang login bisa mengirim
+  // broadcast lewat nomor WA milik organization LAIN cukup dengan menebak/
+  // memakai UUID channel yang bocor (pola sama seperti automations.ts).
+  const { rows: channelRows } = await pool.query(
+    "SELECT id FROM whatsapp_channels WHERE id = $1 AND organization_id = $2",
+    [channelId, organizationId]
+  );
+  if (!channelRows[0]) return res.status(404).json({ error: "Nomor WhatsApp tidak ditemukan" });
 
   const client = await pool.connect();
   try {
@@ -80,14 +90,20 @@ broadcastsRouter.get("/broadcasts", requireAuth, async (req: AuthedRequest, res)
   res.json(rows);
 });
 
+// P-5: sebelumnya endpoint ini WHERE b.id = $1 saja, tanpa filter organisasi
+// sama sekali — siapa pun yang login bisa lihat detail broadcast organization
+// LAIN cukup dengan menebak UUID-nya. Ditambahkan JOIN + filter organisasi
+// sama seperti GET /broadcasts (list) di atas.
 broadcastsRouter.get("/broadcasts/:id", requireAuth, async (req: AuthedRequest, res) => {
   const { rows } = await pool.query(
     `SELECT b.*,
        (SELECT count(*) FROM broadcast_recipients WHERE broadcast_id = b.id AND status = 'sent') AS sent_count,
        (SELECT count(*) FROM broadcast_recipients WHERE broadcast_id = b.id AND status = 'failed') AS failed_count,
        (SELECT count(*) FROM broadcast_recipients WHERE broadcast_id = b.id) AS total_count
-     FROM broadcasts b WHERE b.id = $1`,
-    [req.params.id]
+     FROM broadcasts b
+     JOIN whatsapp_channels wc ON wc.id = b.channel_id
+     WHERE b.id = $1 AND wc.organization_id = $2`,
+    [req.params.id, req.auth!.organizationId]
   );
   if (!rows[0]) return res.status(404).json({ error: "Broadcast tidak ditemukan" });
   res.json(rows[0]);

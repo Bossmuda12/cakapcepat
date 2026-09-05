@@ -28,3 +28,17 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
     res.status(401).json({ error: "Token tidak valid atau kedaluwarsa" });
   }
 }
+
+/**
+ * P-14: helper pengecekan peran untuk endpoint yang mengubah hal sensitif
+ * (daftar/ubah/hapus nomor WA, kirim/buat broadcast, aturan otomatisasi,
+ * knowledge base, produk & departemen, dsb). Pasang SETELAH requireAuth,
+ * mis. router.post("/x", requireAuth, requireOwnerOrAdmin, handler).
+ * Endpoint BACA (GET) tidak perlu ini — tetap boleh diakses semua peran.
+ */
+export function requireOwnerOrAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
+  if (req.auth?.role !== "owner" && req.auth?.role !== "admin") {
+    return res.status(403).json({ error: "Hanya owner/admin yang bisa melakukan aksi ini" });
+  }
+  next();
+}

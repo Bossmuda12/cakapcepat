@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { useRealtime } from "../useRealtime";
+import DateRangeFilter from "../components/DateRangeFilter";
+import { defaultRange } from "../dateRangePresets";
 
 function formatTime(ts) {
   if (!ts) return "-";
@@ -13,6 +15,7 @@ function formatTime(ts) {
 }
 
 export default function Monitor() {
+  const [range, setRange] = useState(defaultRange());
   const [stats, setStats] = useState(null);
   const [rows, setRows] = useState(null);
   const [error, setError] = useState("");
@@ -20,15 +23,15 @@ export default function Monitor() {
   const load = useCallback(async () => {
     try {
       const [statsData, convData] = await Promise.all([
-        api.get("/conversations/stats"),
-        api.get("/conversations"),
+        api.get(`/conversations/stats?from=${range.from}&to=${range.to}`),
+        api.get(`/conversations?from=${range.from}&to=${range.to}`),
       ]);
       setStats(statsData);
-      setRows(convData);
+      setRows(Array.isArray(convData) ? convData : convData?.items || []);
     } catch (err) {
       setError(err.message);
     }
-  }, []);
+  }, [range.from, range.to]);
 
   useEffect(() => {
     load();
@@ -46,10 +49,15 @@ export default function Monitor() {
 
   return (
     <div>
-      <h1>Monitor Chat</h1>
-      <p className="page-subtitle">
-        Pantau semua percakapan CS secara real-time — siapa sedang chat dengan siapa, dan performa tiap CS.
-      </p>
+      <div className="toolbar" style={{ marginBottom: 6 }}>
+        <div>
+          <h1>Monitor Chat</h1>
+          <p className="page-subtitle">
+            Pantau semua percakapan CS secara real-time — siapa sedang chat dengan siapa, dan performa tiap CS.
+          </p>
+        </div>
+        <DateRangeFilter value={range} onChange={setRange} />
+      </div>
 
       {error && <div className="error-box">{error}</div>}
 

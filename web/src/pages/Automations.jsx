@@ -34,6 +34,10 @@ export default function Automations() {
   const [aiSaved, setAiSaved] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
 
+  const [deletingRow, setDeletingRow] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   const load = async () => {
     try {
       const [a, c, s] = await Promise.all([
@@ -91,12 +95,18 @@ export default function Automations() {
     }
   };
 
-  const remove = async (id) => {
+  const confirmDelete = async () => {
+    if (!deletingRow) return;
+    setDeleteBusy(true);
+    setDeleteError("");
     try {
-      await api.del(`/automations/${id}`);
+      await api.del(`/automations/${deletingRow.id}`);
+      setDeletingRow(null);
       await load();
     } catch (err) {
-      setError(err.message);
+      setDeleteError(err.message);
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
@@ -303,7 +313,7 @@ export default function Automations() {
                     </button>
                   </td>
                   <td>
-                    <button className="btn secondary" onClick={() => remove(a.id)}>
+                    <button className="btn secondary" onClick={() => setDeletingRow(a)}>
                       Hapus
                     </button>
                   </td>
@@ -313,6 +323,37 @@ export default function Automations() {
           </table>
         )}
       </div>
+
+      <Modal open={!!deletingRow} onClose={() => setDeletingRow(null)} title="Hapus aturan otomatisasi?" width={440}>
+        {deletingRow && (
+          <div>
+            {deleteError && <div className="error-box">{deleteError}</div>}
+            <p style={{ fontSize: 14 }}>
+              Yakin mau menghapus aturan "{describe(deletingRow)}"? Tindakan ini tidak bisa dibatalkan.
+            </p>
+            <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+              <button
+                type="button"
+                className="btn secondary"
+                style={{ flex: 1 }}
+                onClick={() => setDeletingRow(null)}
+                disabled={deleteBusy}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                className="btn danger"
+                style={{ flex: 1 }}
+                onClick={confirmDelete}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? "Menghapus..." : "Ya, Hapus"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

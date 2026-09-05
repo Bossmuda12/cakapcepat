@@ -289,7 +289,7 @@ CREATE INDEX IF NOT EXISTS idx_conversations_order_status ON conversations(order
 ALTER TABLE whatsapp_channels ALTER COLUMN phone_number_id DROP NOT NULL;
 ALTER TABLE whatsapp_channels ALTER COLUMN access_token DROP NOT NULL;
 ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS connection_type TEXT NOT NULL DEFAULT 'cloud_api'; -- cloud_api | qr_session
-ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS connection_state TEXT NOT NULL DEFAULT 'idle'; -- idle | qr_pending | pairing_pending | connecting | connected | reconnecting | logged_out
+ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS connection_state TEXT NOT NULL DEFAULT 'idle'; -- idle | qr_pending | pairing_pending | connecting | connected | reconnecting | logged_out | error (P-12: gagal reconnect setelah batas percobaan)
 ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS qr_data_url TEXT;   -- QR code terkini sbg data:image, transient
 ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS pairing_code TEXT; -- kode pairing 8-digit terkini, transient
 ALTER TABLE whatsapp_channels ADD COLUMN IF NOT EXISTS qr_requested_at TIMESTAMPTZ;
@@ -323,3 +323,118 @@ CREATE TABLE IF NOT EXISTS whatsapp_qr_auth_keys (
 ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_assigned_to_fkey;
 ALTER TABLE conversations ADD CONSTRAINT conversations_assigned_to_fkey
   FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL;
+
+-- ============================================================================
+-- P-1: Percakapan duplikat. INSERT ke conversations di ingest.ts sebelumnya
+-- pakai "ON CONFLICT DO NOTHING" padahal TIDAK ADA unique constraint di
+-- (contact_id, channel_id) — jadi tiap pesan masuk selalu bikin baris
+-- conversations baru alih-alih dipakai bareng (percakapan "pecah" per pesan).
+--
+-- Blok ini (aman dijalankan berulang tiap deploy):
+--   (a) gabungkan duplikat LAMA yang sudah kadung tercipta: untuk tiap
+--       (contact_id, channel_id) sisakan 1 baris tertua, pindahkan semua
+--       messages & order_status_events ke baris itu, pertahankan nilai
+--       ctwa_clid/ad_source_url/order_status/order_value/assigned_to yang
+--       tidak NULL dari baris duplikat (kalau baris tertua kosong), lalu
+--       hapus baris duplikatnya;
+--   (b) pasang UNIQUE INDEX di (contact_id, channel_id) supaya duplikat baru
+--       tidak bisa tercipta lagi — dipakai ingest.ts sebagai target upsert
+--       "ON CONFLICT (contact_id, channel_id)".
+-- ============================================================================
+DO $$
+DECLARE
+  dup RECORD;
+  keep_id UUID;
+BEGIN
+  -- Kalau index unique-nya sudah ada, berarti penggabungan sudah pernah
+  -- dijalankan sebelumnya — tidak perlu diulang (schema.sql dijalankan
+  -- ulang tiap deploy).
+  IF EXISTS (
+    SELECT 1 FROM pg_indexes
+    WHERE indexname = 'idx_conversations_contact_channel'
+  ) THEN
+    RETURN;
+  END IF;
+
+  FOR dup IN
+    SELECT contact_id, channel_id
+    FROM conversations
+    GROUP BY contact_id, channel_id
+    HAVING count(*) > 1
+  LOOP
+    -- Baris tertua yang dipertahankan.
+    SELECT id INTO keep_id
+    FROM conversations
+    WHERE contact_id = dup.contact_id AND channel_id = dup.channel_id
+    ORDER BY created_at ASC, id ASC
+    LIMIT 1;
+
+    -- Pindahkan semua pesan & event status order dari duplikat ke percakapan yang dipertahankan.
+    UPDATE messages SET conversation_id = keep_id
+    WHERE conversation_id IN (
+      SELECT id FROM conversations
+      WHERE contact_id = dup.contact_id AND channel_id = dup.channel_id AND id <> keep_id
+    );
+
+    UPDATE order_status_events SET conversation_id = keep_id
+    WHERE conversation_id IN (
+      SELECT id FROM conversations
+      WHERE contact_id = dup.contact_id AND channel_id = dup.channel_id AND id <> keep_id
+    );
+
+    -- Pertahankan nilai atribusi/order/assign yang tidak NULL dari duplikat,
+    -- kalau baris yang dipertahankan sendiri masih kosong di kolom itu.
+    UPDATE conversations keep SET
+      ctwa_clid = COALESCE(keep.ctwa_clid, dup_agg.ctwa_clid),
+      ad_source_url = COALESCE(keep.ad_source_url, dup_agg.ad_source_url),
+      order_status = COALESCE(keep.order_status, dup_agg.order_status),
+      order_value = COALESCE(keep.order_value, dup_agg.order_value),
+      assigned_to = COALESCE(keep.assigned_to, dup_agg.assigned_to),
+      last_message_at = GREATEST(keep.last_message_at, dup_agg.last_message_at)
+    FROM (
+      SELECT
+        max(ctwa_clid) AS ctwa_clid,
+        max(ad_source_url) AS ad_source_url,
+        max(order_status) AS order_status,
+        max(order_value) AS order_value,
+        max(assigned_to::text)::uuid AS assigned_to,
+        max(last_message_at) AS last_message_at
+      FROM conversations
+      WHERE contact_id = dup.contact_id AND channel_id = dup.channel_id AND id <> keep_id
+    ) dup_agg
+    WHERE keep.id = keep_id;
+
+    -- Hapus baris duplikat (messages/order_status_events yang tersisa di
+    -- baris ini sudah dipindahkan di atas, jadi ON DELETE CASCADE aman).
+    DELETE FROM conversations
+    WHERE contact_id = dup.contact_id AND channel_id = dup.channel_id AND id <> keep_id;
+  END LOOP;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_contact_channel ON conversations(contact_id, channel_id);
+
+-- ============================================================================
+-- P-3: Pesan kembar. wa_message_id sebelumnya tidak unique, jadi retry
+-- webhook Meta / event Baileys yang diproses dua kali bisa mencatat pesan
+-- yang sama dua kali. Bersihkan dulu duplikat wa_message_id yang sudah
+-- kadung tercatat (sisakan yang tertua), baru pasang UNIQUE INDEX partial
+-- (wa_message_id NULL tetap boleh berulang — pesan outbound lama/manual
+-- banyak yang tidak punya wa_message_id).
+-- ============================================================================
+DELETE FROM messages m
+USING messages newer
+WHERE m.wa_message_id IS NOT NULL
+  AND m.wa_message_id = newer.wa_message_id
+  AND m.id <> newer.id
+  AND (m.created_at, m.id) > (newer.created_at, newer.id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_wa_message_id ON messages(wa_message_id) WHERE wa_message_id IS NOT NULL;
+
+-- ============================================================================
+-- P-6: Pengetahuan AI tidak disaring per produk. conversations.product_id
+-- menandai chat ini soal produk apa (diturunkan dari whatsapp_channels.product_id
+-- saat percakapan dibuat kalau belum diisi manual) supaya chatbot.ts bisa
+-- menyaring knowledge_base_entries yang relevan saja — lihat src/ai/chatbot.ts.
+-- ============================================================================
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS product_id UUID REFERENCES products(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_conversations_product ON conversations(product_id);

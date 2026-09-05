@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 
 export const departmentsRouter = Router();
 
@@ -17,7 +17,7 @@ departmentsRouter.get("/departments", requireAuth, async (req: AuthedRequest, re
 
 const createDepartmentSchema = z.object({ name: z.string().min(1) });
 
-departmentsRouter.post("/departments", requireAuth, async (req: AuthedRequest, res) => {
+departmentsRouter.post("/departments", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = createDepartmentSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -26,4 +26,31 @@ departmentsRouter.post("/departments", requireAuth, async (req: AuthedRequest, r
     [req.auth!.organizationId, parsed.data.name]
   );
   res.status(201).json(rows[0]);
+});
+
+const updateDepartmentSchema = z.object({ name: z.string().min(1) });
+
+// P-26: departemen sebelumnya cuma bisa dibuat, tidak bisa diedit namanya.
+departmentsRouter.patch("/departments/:id", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
+  const parsed = updateDepartmentSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const { rows } = await pool.query(
+    "UPDATE departments SET name = $3 WHERE id = $1 AND organization_id = $2 RETURNING id, name",
+    [req.params.id, req.auth!.organizationId, parsed.data.name]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Departemen tidak ditemukan" });
+  res.json(rows[0]);
+});
+
+// P-26: departemen sebelumnya tidak bisa dihapus sama sekali. Nomor WA yang
+// terkait TIDAK ikut terhapus — department_id di-set NULL (ON DELETE SET
+// NULL, lihat schema.sql), cuma pengelompokannya yang lepas.
+departmentsRouter.delete("/departments/:id", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
+  const { rowCount } = await pool.query(
+    "DELETE FROM departments WHERE id = $1 AND organization_id = $2",
+    [req.params.id, req.auth!.organizationId]
+  );
+  if (!rowCount) return res.status(404).json({ error: "Departemen tidak ditemukan" });
+  res.json({ ok: true });
 });

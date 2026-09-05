@@ -1,11 +1,35 @@
 import "dotenv/config";
 
+const isProduction = process.env.NODE_ENV === "production";
+
+// P-4: sebelumnya fungsi ini TIDAK PERNAH melempar karena selalu diberi
+// fallback — akibatnya di production pun JWT_SECRET (atau env var wajib
+// lain) bisa diam-diam jatuh ke nilai cadangan yang sudah publik di riwayat
+// git ini. Sekarang: di production, env var yang tidak diisi WAJIB melempar
+// error saat startup (jangan sampai server jalan dengan kredensial cadangan
+// yang semua orang bisa lihat di source code). Di luar production (dev
+// lokal), fallback masih boleh dipakai demi kemudahan, tapi selalu dengan
+// console.warn yang jelas supaya tidak kebablasan sampai ke production.
 function required(name: string, fallback?: string): string {
-  const v = process.env[name] ?? fallback;
-  if (v === undefined) {
-    throw new Error(`Env var ${name} wajib diisi — cek file .env (contoh di .env.example)`);
+  const v = process.env[name];
+  if (v !== undefined && v !== "") return v;
+
+  if (isProduction) {
+    throw new Error(
+      `Env var ${name} wajib diisi di production — set variable ini di Railway/deploy config. ` +
+        `JANGAN pernah mengandalkan nilai cadangan di kode untuk production.`
+    );
   }
-  return v;
+
+  if (fallback !== undefined) {
+    console.warn(
+      `[config] PERINGATAN: Env var ${name} belum diisi — memakai nilai cadangan bawaan HANYA untuk pengembangan lokal. ` +
+        `Set ${name} di file .env kamu, dan JANGAN pernah deploy ke production tanpa mengisi env var ini.`
+    );
+    return fallback;
+  }
+
+  throw new Error(`Env var ${name} wajib diisi — cek file .env (contoh di .env.example)`);
 }
 
 export const config = {

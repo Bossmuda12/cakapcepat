@@ -44,3 +44,10 @@ export function rangeForPreset(preset, customFrom, customTo) {
 export function defaultRange() {
   return { preset: "today", ...rangeForPreset("today") };
 }
+
+// Label singkat (huruf kecil) buat ditempel di teks lain, mis. "Percakapan (hari ini)".
+// Ambil dari daftar PRESETS di atas supaya tidak ada rantai ternary yang harus disinkronkan manual.
+export function presetLabel(preset) {
+  const found = PRESETS.find((p) => p.key === preset);
+  return found ? found.label.toLowerCase() : preset;
+}

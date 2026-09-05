@@ -5,6 +5,13 @@ interface GenerateReplyParams {
   organizationId: string;
   conversationId: string;
   incomingText: string;
+  /**
+   * P-6: dipakai untuk menentukan produk yang sedang dibicarakan (lewat
+   * whatsapp_channels.product_id) kalau conversations.product_id belum diisi.
+   * Opsional supaya pemanggil lama (kalau ada) tetap kompilasi — tanpa ini,
+   * knowledge base tidak disaring per produk (perilaku lama: ambil semua).
+   */
+  channelId?: string;
 }
 
 interface AnthropicContentBlock {
@@ -47,6 +54,7 @@ export async function maybeGenerateAiReply({
   organizationId,
   conversationId,
   incomingText,
+  channelId,
 }: GenerateReplyParams): Promise<string | null> {
   if (!incomingText.trim()) return null;
 
@@ -57,8 +65,9 @@ export async function maybeGenerateAiReply({
     return null;
   }
 
+  const productId = await resolveProductId(conversationId, channelId);
   const [knowledge, history] = await Promise.all([
-    getKnowledgeBaseContext(organizationId),
+    getKnowledgeBaseContext(organizationId, productId),
     getRecentHistory(conversationId),
   ]);
 
@@ -109,11 +118,47 @@ async function getAiConfig(organizationId: string): Promise<AiConfig> {
   };
 }
 
-async function getKnowledgeBaseContext(organizationId: string): Promise<string> {
-  const { rows } = await pool.query(
-    "SELECT title, content FROM knowledge_base_entries WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 50",
-    [organizationId]
+// P-6: tentukan produk yang sedang dibicarakan di percakapan ini — utamakan
+// conversations.product_id (bisa diisi manual dari dashboard), fallback ke
+// whatsapp_channels.product_id milik channel yang dipakai (nomor WA khusus
+// produk tertentu, lihat komentar whatsapp_channels di schema.sql). Return
+// null kalau keduanya kosong — berarti produk tidak diketahui, knowledge base
+// diambil semua seperti perilaku lama (lihat getKnowledgeBaseContext).
+async function resolveProductId(conversationId: string, channelId?: string): Promise<string | null> {
+  const { rows } = await pool.query("SELECT product_id, channel_id FROM conversations WHERE id = $1", [
+    conversationId,
+  ]);
+  const convo = rows[0];
+  if (convo?.product_id) return convo.product_id;
+
+  const resolvedChannelId: string | undefined = channelId ?? convo?.channel_id ?? undefined;
+  if (!resolvedChannelId) return null;
+
+  const { rows: channelRows } = await pool.query(
+    "SELECT product_id FROM whatsapp_channels WHERE id = $1",
+    [resolvedChannelId]
   );
+  return channelRows[0]?.product_id ?? null;
+}
+
+// P-6: materi Knowledge Base disaring per produk supaya AI tidak "nyasar"
+// menjawab pakai info produk lain saat organisasi punya banyak nomor WA untuk
+// banyak produk berbeda. Materi tanpa product_id (NULL) dianggap pengetahuan
+// UMUM toko (mis. jam operasional, kebijakan retur) — selalu ikut disertakan
+// apa pun produknya. Kalau produk tidak diketahui (productId null), ambil
+// semua materi seperti perilaku lama.
+async function getKnowledgeBaseContext(organizationId: string, productId: string | null): Promise<string> {
+  const { rows } = productId
+    ? await pool.query(
+        `SELECT title, content FROM knowledge_base_entries
+         WHERE organization_id = $1 AND (product_id = $2 OR product_id IS NULL)
+         ORDER BY created_at DESC LIMIT 50`,
+        [organizationId, productId]
+      )
+    : await pool.query(
+        "SELECT title, content FROM knowledge_base_entries WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 50",
+        [organizationId]
+      );
   if (rows.length === 0) return "(Tim belum mengisi materi apa pun di Knowledge Base.)";
   return rows.map((r) => `## ${r.title}\n${r.content}`).join("\n\n");
 }
@@ -129,13 +174,32 @@ async function getRecentHistory(conversationId: string): Promise<ChatMessage[]> 
      LIMIT $2`,
     [conversationId, MAX_HISTORY_MESSAGES]
   );
-  return rows
+  const messages = rows
     .reverse()
     .map((m): ChatMessage => ({
       role: m.direction === "inbound" ? "user" : "assistant",
       content: typeof m.content?.body === "string" ? m.content.body : "",
     }))
     .filter((m) => m.content.trim().length > 0);
+
+  // P-22: API Claude mewajibkan urutan peran user/assistant berselang-seling
+  // dan wajib DIMULAI dari "user" — riwayat mentah bisa melanggar ini kalau
+  // ada 2+ pesan berurutan dengan arah yang sama (mis. CS balas manual 2x
+  // berturut-turut, atau pelanggan kirim 2 pesan terpisah tanpa dibalas dulu).
+  // Gabungkan pesan berurutan dengan role sama jadi satu (isi disambung baris
+  // baru), lalu buang dari depan sampai pesan pertama ber-role "user".
+  const merged: ChatMessage[] = [];
+  for (const m of messages) {
+    const last = merged[merged.length - 1];
+    if (last && last.role === m.role) {
+      last.content = `${last.content}\n${m.content}`;
+    } else {
+      merged.push({ ...m });
+    }
+  }
+
+  const firstUserIndex = merged.findIndex((m) => m.role === "user");
+  return firstUserIndex === -1 ? [] : merged.slice(firstUserIndex);
 }
 
 function buildSystemPrompt(knowledge: string, customPersona: string | null): string {

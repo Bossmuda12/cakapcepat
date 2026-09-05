@@ -101,10 +101,17 @@ ordersRouter.post("/conversations/:id/order-status", requireAuth, async (req: Au
   res.json({ ok: true, capiReported: Boolean(capiEventName) });
 });
 
+// P-31: from/to sebelumnya z.string().optional() polos (tidak divalidasi
+// formatnya) — diselaraskan dengan pola yang sudah dipakai di
+// routes/stats.ts (regex YYYY-MM-DD), supaya tanggal yang salah format
+// dibalas 400 yang jelas, bukan error Postgres mentah kalau lolos ke query.
 const listQuerySchema = z.object({
   status: z.enum(ORDER_STATUSES).optional(),
-  from: z.string().optional(),
-  to: z.string().optional(),
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  // Filter tambahan: saring lewat conversations.product_id (produk yang
+  // dijual lewat nomor WA percakapan ini).
+  productId: z.string().uuid().optional(),
 });
 
 function buildOrdersQuery(organizationId: string, query: z.infer<typeof listQuerySchema>) {
@@ -118,6 +125,10 @@ function buildOrdersQuery(organizationId: string, query: z.infer<typeof listQuer
   if (query.from && query.to) {
     params.push(query.from, query.to);
     clauses.push(`conv.order_status_updated_at::date BETWEEN $${params.length - 1} AND $${params.length}`);
+  }
+  if (query.productId) {
+    params.push(query.productId);
+    clauses.push(`conv.product_id = $${params.length}`);
   }
 
   return { where: clauses.join(" AND "), params };

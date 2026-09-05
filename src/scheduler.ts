@@ -25,8 +25,16 @@ export function initScheduler() {
 }
 
 async function runCheck() {
+  // P-9: SEBELUMNYA pakai now.getHours() — itu jam LOKAL SERVER (Railway
+  // biasanya UTC), bukan jam WIB, jadi daily_report_hour dibandingkan dengan
+  // jam yang salah zona (laporan bisa terkirim jam yang salah / tidak pernah
+  // terkirim). Dihitung eksplisit dari UTC, sama pola dengan
+  // isOutsideOfficeHours() di src/whatsapp/ingest.ts. Belum ada kolom offset
+  // per organization di skema, jadi pakai konstanta WIB (+7) untuk semua
+  // organization — cukup untuk kebutuhan tim internal yang semuanya di Indonesia.
+  const UTC_OFFSET_HOURS_WIB = 7;
   const now = new Date();
-  const currentHour = now.getHours();
+  const currentHour = (now.getUTCHours() + UTC_OFFSET_HOURS_WIB) % 24;
 
   const { rows: orgs } = await pool.query(
     `SELECT id, name, daily_report_wa_number, daily_report_hour, last_daily_report_at

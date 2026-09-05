@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 import { reportConversionToMeta } from "../whatsapp/capi";
 import { sendTextMessage } from "../whatsapp/client";
 import { sendViaQrSession } from "../whatsapp/qrSessionManager";
@@ -9,13 +9,42 @@ import { broadcastToOrg } from "../realtime";
 
 export const conversationsRouter = Router();
 
-// Inbox: daftar percakapan. ?source=ctwa untuk filter yang berasal dari iklan
-// CTWA saja. ?ownerUserId=<uuid> untuk filter cuma percakapan lewat nomor WA
-// yang dipegang anggota tim tertentu — dipakai owner buat "klik nama tim,
-// lihat cuma obrolan dia" di halaman Percakapan.
+// P-15: daftar percakapan sekarang dukung paginasi (limit/offset), pencarian
+// (q, cari di nama kontak atau nomor WA) & filter status/produk — sebelumnya
+// dipotong LIMIT 200 tanpa cara melihat sisanya atau mencari kontak tertentu.
+const listConversationsQuerySchema = z.object({
+  source: z.string().optional(), // "ctwa" untuk filter yang berasal dari iklan CTWA saja
+  ownerUserId: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  q: z.string().trim().min(1).optional(),
+  status: z.enum(["open", "pending", "closed", "archived"]).optional(),
+  productId: z.string().uuid().optional(),
+});
+
+// Inbox: daftar percakapan.
+//
+// PERUBAHAN BENTUK RESPONS (breaking change, frontend perlu diperbarui):
+// endpoint ini SEKARANG SELALU mengembalikan
+//   { items: [...], total, limit, offset }
+// bukan array polos seperti sebelumnya.
+//
+// Query param:
+//  - ?source=ctwa       filter yang berasal dari iklan CTWA saja
+//  - ?ownerUserId=<uuid> filter cuma percakapan lewat nomor WA yang dipegang
+//                        anggota tim tertentu (dipakai owner buat "klik nama
+//                        tim, lihat cuma obrolan dia")
+//  - ?limit, ?offset    paginasi (default limit 50, maks 200)
+//  - ?q                 cari di nama kontak atau nomor WA (ILIKE)
+//  - ?status            open|pending|closed|archived — default: semua KECUALI
+//                        archived (percakapan yang diarsipkan disembunyikan
+//                        dari inbox utama secara default)
+//  - ?productId         filter lewat conversations.product_id
 conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest, res) => {
-  const ctwaOnly = req.query.source === "ctwa";
-  const ownerUserId = typeof req.query.ownerUserId === "string" ? req.query.ownerUserId : null;
+  const parsed = listConversationsQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { source, ownerUserId, limit, offset, q, status, productId } = parsed.data;
+  const ctwaOnly = source === "ctwa";
 
   const params: unknown[] = [req.auth!.organizationId];
   const clauses = ["c.organization_id = $1"];
@@ -24,10 +53,35 @@ conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest
     params.push(ownerUserId);
     clauses.push(`wc.owner_user_id = $${params.length}`);
   }
+  if (status) {
+    params.push(status);
+    clauses.push(`conv.status = $${params.length}`);
+  } else {
+    clauses.push("conv.status <> 'archived'");
+  }
+  if (q) {
+    params.push(`%${q}%`);
+    clauses.push(`(c.name ILIKE $${params.length} OR c.wa_number ILIKE $${params.length})`);
+  }
+  if (productId) {
+    params.push(productId);
+    clauses.push(`conv.product_id = $${params.length}`);
+  }
+  const whereSql = clauses.join(" AND ");
 
+  const { rows: countRows } = await pool.query(
+    `SELECT count(*) FROM conversations conv
+     JOIN contacts c ON c.id = conv.contact_id
+     JOIN whatsapp_channels wc ON wc.id = conv.channel_id
+     WHERE ${whereSql}`,
+    params
+  );
+  const total = Number(countRows[0].count);
+
+  const listParams = [...params, limit, offset];
   const { rows } = await pool.query(
     `SELECT conv.id, conv.status, conv.assigned_to, conv.ctwa_clid, conv.ad_source_url,
-            conv.conversion_reported, conv.last_message_at, conv.channel_id,
+            conv.conversion_reported, conv.last_message_at, conv.channel_id, conv.product_id,
             c.wa_number, c.name AS contact_name, c.pipeline_stage,
             u.name AS assigned_name,
             wc.owner_user_id AS channel_owner_id, wc.label AS channel_label
@@ -35,12 +89,13 @@ conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest
      JOIN contacts c ON c.id = conv.contact_id
      JOIN whatsapp_channels wc ON wc.id = conv.channel_id
      LEFT JOIN users u ON u.id = conv.assigned_to
-     WHERE ${clauses.join(" AND ")}
+     WHERE ${whereSql}
      ORDER BY conv.last_message_at DESC NULLS LAST
-     LIMIT 200`,
-    params
+     LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+    listParams
   );
-  res.json(rows);
+
+  res.json({ items: rows, total, limit, offset });
 });
 
 /**
@@ -185,15 +240,38 @@ conversationsRouter.post("/conversations/:id/messages", requireAuth, async (req:
 
 const assignSchema = z.object({ userId: z.string().uuid() });
 
+// P-5: sebelumnya endpoint ini UPDATE langsung pakai req.params.id tanpa
+// pernah memverifikasi percakapan itu milik organization pemanggil, DAN
+// tanpa memverifikasi userId yang di-assign benar anggota organization yang
+// sama — jadi siapa pun yang login bisa meng-assign percakapan ORGANIZATION
+// LAIN ke user mana pun (termasuk user organization lain) cukup dengan
+// menebak UUID-nya.
 conversationsRouter.post("/conversations/:id/assign", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = assignSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const organizationId = req.auth!.organizationId;
+
+  const { rows: convoRows } = await pool.query(
+    `SELECT conv.id FROM conversations conv
+     JOIN contacts c ON c.id = conv.contact_id
+     WHERE conv.id = $1 AND c.organization_id = $2`,
+    [req.params.id, organizationId]
+  );
+  if (!convoRows[0]) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+
+  const { rows: userRows } = await pool.query(
+    "SELECT id FROM users WHERE id = $1 AND organization_id = $2",
+    [parsed.data.userId, organizationId]
+  );
+  if (!userRows[0]) {
+    return res.status(400).json({ error: "Anggota tim (userId) tidak ditemukan di organization ini" });
+  }
 
   await pool.query("UPDATE conversations SET assigned_to = $1 WHERE id = $2", [
     parsed.data.userId,
     req.params.id,
   ]);
-  broadcastToOrg(req.auth!.organizationId, { type: "assign", conversationId: req.params.id });
+  broadcastToOrg(organizationId, { type: "assign", conversationId: req.params.id });
   res.json({ ok: true });
 });
 
@@ -206,6 +284,11 @@ const pipelineSchema = z.object({
  * Update tahap pipeline lead. Kalau ditandai closing_won, otomatis laporkan
  * konversi ke Meta lewat CAPI (kalau chat ini berasal dari iklan CTWA) —
  * inilah yang menutup loop atribusi iklan yang dijelaskan di Bab 8.
+ *
+ * P-5: sebelumnya SELECT contact_id FROM conversations WHERE id = $1 saja,
+ * TANPA verifikasi organisasi sama sekali — siapa pun yang login bisa
+ * mengubah tahap pipeline (dan memicu laporan CAPI) untuk percakapan
+ * ORGANIZATION LAIN cukup dengan menebak UUID conversation-nya.
  */
 conversationsRouter.post("/conversations/:id/pipeline", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = pipelineSchema.safeParse(req.body);
@@ -214,8 +297,10 @@ conversationsRouter.post("/conversations/:id/pipeline", requireAuth, async (req:
   const conversationId = req.params.id;
 
   const { rows } = await pool.query(
-    "SELECT contact_id FROM conversations WHERE id = $1",
-    [conversationId]
+    `SELECT conv.contact_id FROM conversations conv
+     JOIN contacts c ON c.id = conv.contact_id
+     WHERE conv.id = $1 AND c.organization_id = $2`,
+    [conversationId, req.auth!.organizationId]
   );
   if (!rows[0]) return res.status(404).json({ error: "Conversation tidak ditemukan" });
 
@@ -238,3 +323,84 @@ conversationsRouter.post("/conversations/:id/pipeline", requireAuth, async (req:
   broadcastToOrg(req.auth!.organizationId, { type: "pipeline", conversationId });
   res.json({ ok: true, capiReported: Boolean(capiResult) });
 });
+
+// ============================================================================
+// P-18/T-6: sebelumnya tidak ada cara sama sekali menghapus/mengarsipkan
+// percakapan, pesan, atau kontak dari dashboard. Semua endpoint di bawah ini
+// memfilter organisasi pemanggil DAN hanya boleh dipakai owner/admin (aksi
+// merusak/tidak bisa dibatalkan).
+// ============================================================================
+
+/** Hapus percakapan beserta seluruh pesannya (ON DELETE CASCADE di schema.sql). */
+conversationsRouter.delete(
+  "/conversations/:id",
+  requireAuth,
+  requireOwnerOrAdmin,
+  async (req: AuthedRequest, res) => {
+    const { rowCount } = await pool.query(
+      `DELETE FROM conversations conv
+       USING contacts c
+       WHERE conv.id = $1 AND conv.contact_id = c.id AND c.organization_id = $2`,
+      [req.params.id, req.auth!.organizationId]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+    res.json({ ok: true });
+  }
+);
+
+/** Hapus satu pesan dari sebuah percakapan. */
+conversationsRouter.delete(
+  "/conversations/:id/messages/:messageId",
+  requireAuth,
+  requireOwnerOrAdmin,
+  async (req: AuthedRequest, res) => {
+    const { rowCount } = await pool.query(
+      `DELETE FROM messages m
+       USING conversations conv, contacts c
+       WHERE m.id = $1
+         AND m.conversation_id = $2
+         AND conv.id = m.conversation_id
+         AND conv.contact_id = c.id
+         AND c.organization_id = $3`,
+      [req.params.messageId, req.params.id, req.auth!.organizationId]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Pesan tidak ditemukan" });
+    res.json({ ok: true });
+  }
+);
+
+/** Arsipkan percakapan (status -> 'archived') — disembunyikan dari inbox default (lihat GET /conversations). */
+conversationsRouter.post(
+  "/conversations/:id/archive",
+  requireAuth,
+  requireOwnerOrAdmin,
+  async (req: AuthedRequest, res) => {
+    const { rows } = await pool.query(
+      `UPDATE conversations conv SET status = 'archived'
+       FROM contacts c
+       WHERE conv.id = $1 AND conv.contact_id = c.id AND c.organization_id = $2
+       RETURNING conv.id`,
+      [req.params.id, req.auth!.organizationId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+    res.json({ ok: true, status: "archived" });
+  }
+);
+
+/** Kembalikan percakapan yang diarsipkan (status -> 'open'). */
+conversationsRouter.post(
+  "/conversations/:id/unarchive",
+  requireAuth,
+  requireOwnerOrAdmin,
+  async (req: AuthedRequest, res) => {
+    const { rows } = await pool.query(
+      `UPDATE conversations conv SET status = 'open'
+       FROM contacts c
+       WHERE conv.id = $1 AND conv.contact_id = c.id AND c.organization_id = $2
+       RETURNING conv.id`,
+      [req.params.id, req.auth!.organizationId]
+    );
+    if (!rows[0]) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+    res.json({ ok: true, status: "open" });
+  }
+);

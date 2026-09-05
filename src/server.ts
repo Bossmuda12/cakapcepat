@@ -104,12 +104,16 @@ const POSTGRES_INPUT_ERROR_CODES = new Set([
 
 app.use(
   (err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    // Detail lengkap (termasuk pesan asli Postgres — bisa membocorkan nama
+    // tabel/kolom/kendala internal) HANYA dicatat di log server. Klien selalu
+    // dapat pesan generik berbahasa Indonesia (P-29) — jangan pernah kirim
+    // pgErr.message atau err.message mentah ke response.
     console.error("[server] Unhandled error:", err);
     const pgErr = err as { code?: string; message?: string };
     if (pgErr?.code && POSTGRES_INPUT_ERROR_CODES.has(pgErr.code)) {
-      return res.status(400).json({ error: "Input tidak valid", detail: pgErr.message });
+      return res.status(400).json({ error: "Input tidak valid. Periksa kembali data yang dikirim." });
     }
-    res.status(500).json({ error: "Internal server error" });
+    res.status(500).json({ error: "Terjadi kesalahan pada server. Silakan coba lagi." });
   }
 );
 

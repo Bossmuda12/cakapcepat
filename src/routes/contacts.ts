@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 
 export const contactsRouter = Router();
 
@@ -11,20 +11,50 @@ const createContactSchema = z.object({
   labels: z.array(z.string()).optional(),
 });
 
+// P-15: sebelumnya dipotong LIMIT 200 tanpa paginasi/pencarian. Sekarang
+// dukung ?limit (default 50, maks 200), ?offset, dan ?q (cari nama/nomor WA).
+//
+// PERUBAHAN BENTUK RESPONS (breaking change, frontend perlu diperbarui):
+// endpoint ini SEKARANG SELALU mengembalikan
+//   { items: [...], total, limit, offset }
+// bukan array polos seperti sebelumnya.
+const listContactsQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+  offset: z.coerce.number().int().min(0).default(0),
+  q: z.string().trim().min(1).optional(),
+});
+
 contactsRouter.get("/contacts", requireAuth, async (req: AuthedRequest, res) => {
-  const { from, to } = req.query as { from?: string; to?: string };
+  const parsed = listContactsQuerySchema.safeParse(req.query);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { from, to, limit, offset, q } = parsed.data;
+
   const params: unknown[] = [req.auth!.organizationId];
-  let dateClause = "";
+  const clauses = ["organization_id = $1"];
   if (from && to) {
     params.push(from, to);
-    dateClause = "AND created_at::date BETWEEN $2 AND $3";
+    clauses.push(`created_at::date BETWEEN $${params.length - 1} AND $${params.length}`);
   }
+  if (q) {
+    params.push(`%${q}%`);
+    clauses.push(`(name ILIKE $${params.length} OR wa_number ILIKE $${params.length})`);
+  }
+  const whereSql = clauses.join(" AND ");
+
+  const { rows: countRows } = await pool.query(`SELECT count(*) FROM contacts WHERE ${whereSql}`, params);
+  const total = Number(countRows[0].count);
+
+  const listParams = [...params, limit, offset];
   const { rows } = await pool.query(
     `SELECT id, wa_number, name, labels, pipeline_stage, created_at
-     FROM contacts WHERE organization_id = $1 ${dateClause} ORDER BY created_at DESC LIMIT 200`,
-    params
+     FROM contacts WHERE ${whereSql} ORDER BY created_at DESC
+     LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,
+    listParams
   );
-  res.json(rows);
+
+  res.json({ items: rows, total, limit, offset });
 });
 
 contactsRouter.post("/contacts", requireAuth, async (req: AuthedRequest, res) => {
@@ -40,4 +70,17 @@ contactsRouter.post("/contacts", requireAuth, async (req: AuthedRequest, res) =>
     [req.auth!.organizationId, waNumber, name ?? null, labels ?? []]
   );
   res.status(201).json(rows[0]);
+});
+
+// P-18/T-6: hapus kontak beserta percakapan & pesannya. Foreign key sudah
+// ON DELETE CASCADE (contacts -> conversations -> messages, lihat
+// schema.sql), jadi cukup hapus baris contacts-nya saja. Hanya owner/admin
+// (aksi merusak/tidak bisa dibatalkan).
+contactsRouter.delete("/contacts/:id", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
+  const { rowCount } = await pool.query("DELETE FROM contacts WHERE id = $1 AND organization_id = $2", [
+    req.params.id,
+    req.auth!.organizationId,
+  ]);
+  if (!rowCount) return res.status(404).json({ error: "Kontak tidak ditemukan" });
+  res.json({ ok: true });
 });

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 
 export const productsRouter = Router();
 
@@ -17,7 +17,7 @@ productsRouter.get("/products", requireAuth, async (req: AuthedRequest, res) => 
 
 const createProductSchema = z.object({ name: z.string().min(1) });
 
-productsRouter.post("/products", requireAuth, async (req: AuthedRequest, res) => {
+productsRouter.post("/products", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = createProductSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 
@@ -33,7 +33,7 @@ const updateProductSchema = z.object({
   isActive: z.boolean().optional(),
 });
 
-productsRouter.patch("/products/:id", requireAuth, async (req: AuthedRequest, res) => {
+productsRouter.patch("/products/:id", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = updateProductSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
 

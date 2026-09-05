@@ -1,11 +1,43 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 import { config } from "../config";
 import { disconnectQrSession } from "../whatsapp/qrSessionManager";
 
 export const channelsRouter = Router();
+
+// P-20: pastikan ownerUserId/productId/departmentId yang dikirim klien
+// BENAR-BENAR milik organization pemanggil, sebelum dipakai — tanpa ini,
+// klien bisa "menempelkan" nomor WA ke user/produk/departemen milik
+// organization lain (kalau ID-nya ketebak/bocor).
+async function assertOwnedReferences(
+  organizationId: string,
+  refs: { ownerUserId?: string | null; productId?: string | null; departmentId?: string | null }
+): Promise<string | null> {
+  if (refs.ownerUserId) {
+    const { rows } = await pool.query("SELECT id FROM users WHERE id = $1 AND organization_id = $2", [
+      refs.ownerUserId,
+      organizationId,
+    ]);
+    if (!rows[0]) return "Pemilik nomor (ownerUserId) tidak ditemukan di organization ini";
+  }
+  if (refs.productId) {
+    const { rows } = await pool.query("SELECT id FROM products WHERE id = $1 AND organization_id = $2", [
+      refs.productId,
+      organizationId,
+    ]);
+    if (!rows[0]) return "Produk (productId) tidak ditemukan di organization ini";
+  }
+  if (refs.departmentId) {
+    const { rows } = await pool.query("SELECT id FROM departments WHERE id = $1 AND organization_id = $2", [
+      refs.departmentId,
+      organizationId,
+    ]);
+    if (!rows[0]) return "Departemen (departmentId) tidak ditemukan di organization ini";
+  }
+  return null;
+}
 
 /**
  * Daftar semua nomor WhatsApp yang terhubung, lengkap dengan siapa CS
@@ -58,11 +90,18 @@ const registerChannelSchema = z.object({
  * Untuk pemakaian internal dengan frekuensi nomor baru yang tidak terlalu
  * tinggi, alur manual + endpoint ini sudah cukup praktis.
  */
-channelsRouter.post("/channels", requireAuth, async (req: AuthedRequest, res) => {
+channelsRouter.post("/channels", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = registerChannelSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { phoneNumberId, accessToken, displayPhoneNumber, label, ownerUserId, productId, departmentId } =
     parsed.data;
+
+  const refError = await assertOwnedReferences(req.auth!.organizationId, {
+    ownerUserId,
+    productId,
+    departmentId,
+  });
+  if (refError) return res.status(400).json({ error: refError });
 
   // Verifikasi ringan: pastikan phoneNumberId & accessToken benar-benar valid
   // dengan menanyakannya ke Meta, sebelum disimpan. Best-effort — kalau gagal,
@@ -115,10 +154,17 @@ const reassignChannelSchema = z.object({
  * fitur "lepas kepemilikan", tambahkan flag terpisah (mis. `unsetOwner: true`)
  * daripada mengandalkan null lewat COALESCE.
  */
-channelsRouter.patch("/channels/:id/assign", requireAuth, async (req: AuthedRequest, res) => {
+channelsRouter.patch("/channels/:id/assign", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = reassignChannelSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { ownerUserId, productId, departmentId } = parsed.data;
+
+  const refError = await assertOwnedReferences(req.auth!.organizationId, {
+    ownerUserId,
+    productId,
+    departmentId,
+  });
+  if (refError) return res.status(400).json({ error: refError });
 
   const { rows } = await pool.query(
     `UPDATE whatsapp_channels SET
@@ -152,10 +198,19 @@ const updateChannelSchema = z.object({
  * sekali dibiarkan apa adanya — jadi klien BISA sengaja mengosongkan
  * owner/product/department, tidak seperti COALESCE di endpoint /assign lama.
  */
-channelsRouter.patch("/channels/:id", requireAuth, async (req: AuthedRequest, res) => {
+channelsRouter.patch("/channels/:id", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   const parsed = updateChannelSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const body = parsed.data;
+
+  // Cuma perlu diverifikasi kalau field-nya benar-benar dikirim DAN bukan
+  // null (null berarti "lepaskan", bukan referensi ke baris lain).
+  const refError = await assertOwnedReferences(req.auth!.organizationId, {
+    ownerUserId: body.ownerUserId ?? undefined,
+    productId: body.productId ?? undefined,
+    departmentId: body.departmentId ?? undefined,
+  });
+  if (refError) return res.status(400).json({ error: refError });
 
   const { rows: existingRows } = await pool.query(
     "SELECT * FROM whatsapp_channels WHERE id = $1 AND organization_id = $2",
@@ -225,7 +280,7 @@ channelsRouter.patch("/channels/:id", requireAuth, async (req: AuthedRequest, re
  * eksplisit ke user sebelum memanggil endpoint ini karena sifatnya
  * merusak/tidak bisa dibatalkan.
  */
-channelsRouter.delete("/channels/:id", requireAuth, async (req: AuthedRequest, res) => {
+channelsRouter.delete("/channels/:id", requireAuth, requireOwnerOrAdmin, async (req: AuthedRequest, res) => {
   // Kalau ini nomor QR/pairing, putuskan socketnya dulu (logout dari HP)
   // sebelum baris channel-nya dihapus dari DB — supaya tidak ada socket
   // "nyangkut" di memory yang terus mencoba reconnect ke channel yang sudah hilang.

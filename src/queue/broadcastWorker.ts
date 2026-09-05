@@ -56,7 +56,10 @@ async function processBroadcast(job: Job<BroadcastJobData>) {
       );
       failed++;
     }
-    await sleep(delayMs);
+    // P-11: jeda antar pesan diberi jitter acak ±40% dari delay dasar supaya
+    // pola kirimnya tidak "rata sempurna" per detik (ciri khas bot) — variasi
+    // ini yang bikin ritme kirim lebih mirip CS manusia yang chat satu-satu.
+    await sleep(jitteredDelay(delayMs));
   }
 
   await pool.query("UPDATE broadcasts SET status = 'done' WHERE id = $1", [broadcastId]);
@@ -67,6 +70,13 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// P-11: kembalikan delay dasar +/- hingga 40% secara acak (mis. delay dasar
+// 1000ms bisa jadi antara 600ms-1400ms), dibulatkan & tidak pernah negatif.
+function jitteredDelay(baseMs: number): number {
+  const jitterFactor = 1 + (Math.random() * 2 - 1) * 0.4; // rentang 0.6 .. 1.4
+  return Math.max(0, Math.round(baseMs * jitterFactor));
+}
+
 export const broadcastWorker = new Worker<BroadcastJobData>("broadcast", processBroadcast, {
   connection,
   concurrency: 1,
@@ -74,6 +84,18 @@ export const broadcastWorker = new Worker<BroadcastJobData>("broadcast", process
 
 broadcastWorker.on("failed", (job, err) => {
   console.error(`[worker] Job ${job?.id} gagal:`, err);
+
+  // P-11: sebelumnya broadcast yang jobnya gagal total (mis. exception di luar
+  // loop pengiriman — broadcast tidak ditemukan, koneksi DB putus, dst) cuma
+  // dicatat ke console, status di kolom broadcasts.status tetap 'sending'
+  // SELAMANYA (macet, tidak pernah tampil sebagai gagal di dashboard). Tandai
+  // eksplisit di database supaya user tahu & bisa coba kirim ulang.
+  const broadcastId = job?.data?.broadcastId;
+  if (broadcastId) {
+    pool
+      .query("UPDATE broadcasts SET status = 'failed' WHERE id = $1 AND status <> 'done'", [broadcastId])
+      .catch((updateErr) => console.error(`[worker] Gagal menandai broadcast ${broadcastId} sebagai failed:`, updateErr));
+  }
 });
 
 console.log("[worker] Broadcast worker berjalan, menunggu job...");

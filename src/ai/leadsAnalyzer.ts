@@ -135,6 +135,14 @@ interface ConversationSummary {
   messages: { direction: string; body: string }[];
 }
 
+// P-28: sebelumnya query pesan dijalankan SATU KALI PER PERCAKAPAN di dalam
+// loop (N+1) — untuk MAX_CONVERSATIONS=25 percakapan itu berarti 25 round-trip
+// DB terpisah tiap kali "Hot Leads AI" dijalankan. Sekarang cukup SATU query
+// yang ambil pesan untuk semua conversationId sekaligus (pakai ANY($1)), lalu
+// dikelompokkan per percakapan di memori. Batas MAX_MESSAGES_PER_CONVERSATION
+// tetap dijaga per percakapan (bukan cuma dibatasi total keseluruhan), lewat
+// ROW_NUMBER() OVER (PARTITION BY conversation_id ...) supaya perilakunya
+// identik dengan query per-percakapan yang lama (N pesan TERBARU per percakapan).
 async function gatherConversations(organizationId: string): Promise<ConversationSummary[]> {
   const { rows: convoRows } = await pool.query(
     `SELECT conv.id, conv.status, c.wa_number, c.name AS contact_name, c.pipeline_stage
@@ -146,24 +154,34 @@ async function gatherConversations(organizationId: string): Promise<Conversation
     [organizationId, MAX_CONVERSATIONS]
   );
 
+  if (convoRows.length === 0) return [];
+  const conversationIds = convoRows.map((c) => c.id);
+
+  const { rows: msgRows } = await pool.query(
+    `SELECT conversation_id, direction, content
+     FROM (
+       SELECT conversation_id, direction, content, created_at,
+              row_number() OVER (PARTITION BY conversation_id ORDER BY created_at DESC) AS rn
+       FROM messages
+       WHERE conversation_id = ANY($1) AND content_type = 'text'
+     ) ranked
+     WHERE rn <= $2
+     ORDER BY conversation_id, created_at ASC`,
+    [conversationIds, MAX_MESSAGES_PER_CONVERSATION]
+  );
+
+  const messagesByConversation = new Map<string, { direction: string; body: string }[]>();
+  for (const m of msgRows) {
+    const body = typeof m.content?.body === "string" ? m.content.body : "";
+    if (!body.trim()) continue;
+    const list = messagesByConversation.get(m.conversation_id) ?? [];
+    list.push({ direction: m.direction, body });
+    messagesByConversation.set(m.conversation_id, list);
+  }
+
   const results: ConversationSummary[] = [];
   for (const convo of convoRows) {
-    const { rows: msgRows } = await pool.query(
-      `SELECT direction, content
-       FROM messages
-       WHERE conversation_id = $1 AND content_type = 'text'
-       ORDER BY created_at DESC
-       LIMIT $2`,
-      [convo.id, MAX_MESSAGES_PER_CONVERSATION]
-    );
-    const messages = msgRows
-      .reverse()
-      .map((m) => ({
-        direction: m.direction,
-        body: typeof m.content?.body === "string" ? m.content.body : "",
-      }))
-      .filter((m) => m.body.trim().length > 0);
-
+    const messages = messagesByConversation.get(convo.id) ?? [];
     if (messages.length === 0) continue;
 
     results.push({
