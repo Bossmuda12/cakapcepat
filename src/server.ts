@@ -46,6 +46,7 @@ import { variantsRouter } from "./routes/variants";
 import { courierRouter } from "./routes/courier";
 import { groupsRouter } from "./routes/groups";
 import { followupsRouter } from "./routes/followups";
+import { auditRouter } from "./routes/audit";
 import { initRealtime } from "./realtime";
 import { initScheduler } from "./scheduler";
 import { resumeAllQrSessions } from "./whatsapp/qrSessionManager";
@@ -92,6 +93,7 @@ app.use("/api", variantsRouter);
 app.use("/api", courierRouter);
 app.use("/api", groupsRouter);
 app.use("/api", followupsRouter);
+app.use("/api", auditRouter);
 
 // F-33: berkas media dari pelanggan (foto alamat, bukti transfer, voice note)
 // disimpan di uploads/media/<organizationId>/ dan disajikan lewat /uploads

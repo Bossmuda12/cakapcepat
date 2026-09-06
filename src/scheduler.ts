@@ -4,6 +4,7 @@ import { sendViaQrSession } from "./whatsapp/qrSessionManager";
 import { analyzeLeads, type LeadItem, type LeadFlag } from "./ai/leadsAnalyzer";
 import { pollCourierMailbox } from "./courier/emailReader";
 import { reportClosingsToGroup, sendDailyGroupSummary } from "./jobs/groupReport";
+import { notifyAttentionNeeded } from "./jobs/attentionAlerts";
 import { scheduleFollowUps, sendDueFollowUps } from "./jobs/followUps";
 import { autoClassifyConversations, notifyProblemOrders } from "./jobs/orderAutomation";
 
@@ -51,6 +52,10 @@ export function initScheduler() {
       console.error("[scheduler] Gagal jalankan reportClosingsToGroup():", err)
     );
     notifyProblemOrders().catch((err) => console.error("[scheduler] Gagal jalankan notifyProblemOrders():", err));
+    // F-39: beri tahu owner lewat WA kalau ada chat yang ditandai butuh perhatian.
+    notifyAttentionNeeded().catch((err) =>
+      console.error("[scheduler] Gagal jalankan notifyAttentionNeeded():", err)
+    );
   };
   runGroupAndProblemTick();
   setInterval(runGroupAndProblemTick, GROUP_AND_PROBLEM_INTERVAL_MS);

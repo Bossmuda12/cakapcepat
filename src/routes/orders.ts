@@ -2,6 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
+import { writeAudit } from "../lib/audit";
 import { reportConversionToMeta } from "../whatsapp/capi";
 import { broadcastToOrg } from "../realtime";
 
@@ -677,6 +678,15 @@ ordersRouter.patch("/orders/:id/shipping", requireAuth, requireOwnerOrAdmin, asy
 
     await client.query("COMMIT");
     broadcastToOrg(organizationId, { type: "order_shipping", orderId: req.params.id });
+    // F-41: perubahan status pengiriman & resi menyangkut uang — dicatat siapa pelakunya.
+    await writeAudit({
+      organizationId,
+      actorUserId: req.auth!.userId,
+      action: "order.shipping_changed",
+      entity: "order",
+      entityId: req.params.id,
+      detail: parsed.data,
+    });
     res.json(updatedRows[0]);
   } catch (err) {
     await client.query("ROLLBACK");
@@ -727,6 +737,15 @@ ordersRouter.patch("/orders/:id/cod", requireAuth, requireOwnerOrAdmin, async (r
     [req.params.id, String(existingRows[0].cod_received), String(codReceived), req.auth!.userId]
   );
 
+  await writeAudit({
+    organizationId: req.auth!.organizationId,
+    actorUserId: req.auth!.userId,
+    action: "order.cod_changed",
+    entity: "order",
+    entityId: req.params.id,
+    detail: { codReceived, codAmountCents: parsed.data.codAmountCents ?? null },
+  });
+
   res.json(rows[0]);
 });
 
@@ -736,6 +755,13 @@ ordersRouter.delete("/orders/:id", requireAuth, requireOwnerOrAdmin, async (req:
     req.auth!.organizationId,
   ]);
   if (!rowCount) return res.status(404).json({ error: "Pesanan tidak ditemukan" });
+  await writeAudit({
+    organizationId: req.auth!.organizationId,
+    actorUserId: req.auth!.userId,
+    action: "order.deleted",
+    entity: "order",
+    entityId: req.params.id,
+  });
   res.json({ ok: true });
 });
 

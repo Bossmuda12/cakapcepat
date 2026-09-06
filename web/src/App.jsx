@@ -30,6 +30,7 @@ import Automation from "./pages/Automation";
 import FollowUps from "./pages/FollowUps";
 import Courier from "./pages/Courier";
 import KnowledgeBase from "./pages/KnowledgeBase";
+import AuditLog from "./pages/AuditLog";
 
 function Gate({ children }) {
   const { user, loading, needsBootstrap } = useAuth();
@@ -78,6 +79,7 @@ function AppRoutes() {
                 <Route path="/products" element={<Products />} />
                 <Route path="/departments" element={<Departments />} />
                 <Route path="/team" element={<Team />} />
+                <Route path="/audit-log" element={<AuditLog />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>

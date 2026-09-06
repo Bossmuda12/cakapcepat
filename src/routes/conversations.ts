@@ -20,6 +20,12 @@ const listConversationsQuerySchema = z.object({
   q: z.string().trim().min(1).optional(),
   status: z.enum(["open", "pending", "closed", "archived"]).optional(),
   productId: z.string().uuid().optional(),
+  // Rentang tanggal — keluhan pemilik: halaman Monitor & Percakapan tidak bisa
+  // dibatasi periodenya. Disaring pada waktu pesan TERAKHIR, bukan waktu
+  // percakapan dibuat, karena yang ditanya orang biasanya "chat yang aktif
+  // minggu ini", bukan "chat yang lahir minggu ini".
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal harus YYYY-MM-DD").optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Format tanggal harus YYYY-MM-DD").optional(),
 });
 
 // Inbox: daftar percakapan.
@@ -43,7 +49,7 @@ const listConversationsQuerySchema = z.object({
 conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = listConversationsQuerySchema.safeParse(req.query);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { source, ownerUserId, limit, offset, q, status, productId } = parsed.data;
+  const { source, ownerUserId, limit, offset, q, status, productId, from, to } = parsed.data;
   const ctwaOnly = source === "ctwa";
 
   const params: unknown[] = [req.auth!.organizationId];
@@ -66,6 +72,12 @@ conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest
   if (productId) {
     params.push(productId);
     clauses.push(`conv.product_id = $${params.length}`);
+  }
+  if (from && to) {
+    params.push(from, to);
+    clauses.push(
+      `COALESCE(conv.last_message_at, conv.created_at)::date BETWEEN $${params.length - 1} AND $${params.length}`
+    );
   }
   const whereSql = clauses.join(" AND ");
 
@@ -524,3 +536,67 @@ conversationsRouter.post(
     res.json({ ok: true, status: "open" });
   }
 );
+
+/**
+ * F-40: Ekspor percakapan ke CSV. Dipakai untuk arsip di luar aplikasi dan
+ * untuk dianalisis di spreadsheet (mis. mencari pola pertanyaan yang sering
+ * masuk, bahan mengisi Knowledge Base).
+ */
+conversationsRouter.get("/conversations/export.csv", requireAuth, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    `SELECT c.wa_number, c.name AS contact_name, wc.label AS channel_label,
+            conv.status, conv.order_status, conv.needs_attention, conv.ai_paused,
+            conv.ctwa_clid,
+            to_char(conv.last_message_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI') AS last_message_at,
+            to_char(conv.created_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI') AS created_at,
+            (SELECT count(*) FROM messages m WHERE m.conversation_id = conv.id) AS jumlah_pesan
+     FROM conversations conv
+     JOIN contacts c ON c.id = conv.contact_id
+     JOIN whatsapp_channels wc ON wc.id = conv.channel_id
+     WHERE c.organization_id = $1
+     ORDER BY conv.last_message_at DESC NULLS LAST
+     LIMIT 20000`,
+    [req.auth!.organizationId]
+  );
+
+  const escape = (v: unknown) => {
+    const t = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  };
+  const header = [
+    "nomor_wa",
+    "nama_kontak",
+    "nomor_cs",
+    "status",
+    "status_order",
+    "butuh_perhatian",
+    "ai_dijeda",
+    "ctwa_clid",
+    "pesan_terakhir",
+    "dibuat",
+    "jumlah_pesan",
+  ].join(",");
+  const body = rows
+    .map((r) =>
+      [
+        r.wa_number,
+        r.contact_name,
+        r.channel_label,
+        r.status,
+        r.order_status,
+        r.needs_attention,
+        r.ai_paused,
+        r.ctwa_clid,
+        r.last_message_at,
+        r.created_at,
+        r.jumlah_pesan,
+      ]
+        .map(escape)
+        .join(",")
+    )
+    .join("\n");
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="percakapan.csv"');
+  res.send("\uFEFF" + header + "\n" + body);
+});

@@ -758,3 +758,10 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_org ON audit_log(organization_id, creat
 CREATE INDEX IF NOT EXISTS idx_departments_org ON departments(organization_id);
 CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
 CREATE INDEX IF NOT EXISTS idx_channels_org ON whatsapp_channels(organization_id);
+
+-- ============================================================================
+-- F-39: Notifikasi ke owner saat ada chat ditandai "butuh perhatian".
+-- Penanda waktu supaya satu percakapan tidak diberitahukan berulang-ulang.
+-- ============================================================================
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS attention_notified_at TIMESTAMPTZ;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS attention_alert_enabled BOOLEAN NOT NULL DEFAULT true;

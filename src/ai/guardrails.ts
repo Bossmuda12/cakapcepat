@@ -116,6 +116,34 @@ export const DEFAULT_GUARDRAILS: DefaultGuardrail[] = [
     reason: "Pelanggan minta diskon/kurang harga/nego — perlu persetujuan manusia sebelum dijanjikan.",
     pauseAi: false,
   },
+  // Ejaan & ungkapan Melayu yang benar-benar dipakai pembeli Malaysia — tanpa
+  // ini, "boleh kurang sikit tak?" (cara paling lazim minta diskon di sana)
+  // lolos begitu saja karena tidak mengandung kata "diskon".
+  {
+    keyword: "diskaun",
+    reason: "Pelanggan minta diskon/nego harga — keputusan harga ada di pemilik.",
+    pauseAi: false,
+  },
+  {
+    keyword: "boleh kurang",
+    reason: "Pelanggan minta diskon/nego harga — keputusan harga ada di pemilik.",
+    pauseAi: false,
+  },
+  {
+    keyword: "kurang sikit",
+    reason: "Pelanggan minta diskon/nego harga — keputusan harga ada di pemilik.",
+    pauseAi: false,
+  },
+  {
+    keyword: "murah sikit",
+    reason: "Pelanggan minta diskon/nego harga — keputusan harga ada di pemilik.",
+    pauseAi: false,
+  },
+  {
+    keyword: "harga borong",
+    reason: "Pelanggan tanya harga borong/pukal — keputusan harga ada di pemilik.",
+    pauseAi: false,
+  },
   {
     keyword: "nego",
     reason: "Pelanggan minta diskon/kurang harga/nego — perlu persetujuan manusia sebelum dijanjikan.",

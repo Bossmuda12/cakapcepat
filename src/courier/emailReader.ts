@@ -152,7 +152,7 @@ export async function pollCourierMailbox(organizationId?: string): Promise<Couri
           `INSERT INTO courier_events
              (organization_id, courier, tracking_no, raw_status, mapped_status, source, source_ref, order_id)
            VALUES ($1, $2, $3, $4, $5, 'email', $6, $7)
-           ON CONFLICT (organization_id, source, source_ref) DO NOTHING
+           ON CONFLICT (organization_id, source, source_ref) WHERE source_ref IS NOT NULL DO NOTHING
            RETURNING id`,
           [resolvedOrgId, courier, trackingNo, rawStatus, mappedStatus, messageId, order?.id ?? null]
         );

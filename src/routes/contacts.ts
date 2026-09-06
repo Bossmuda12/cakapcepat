@@ -41,6 +41,14 @@ contactsRouter.get("/contacts", requireAuth, async (req: AuthedRequest, res) => 
     params.push(`%${q}%`);
     clauses.push(`(name ILIKE $${params.length} OR wa_number ILIKE $${params.length})`);
   }
+  // F-29: segmentasi kontak — saring berdasarkan label (mis. "pernah closing",
+  // "minat parfum") supaya follow-up & broadcast bisa ditujukan ke kelompok
+  // yang tepat, bukan disebar ke semua orang.
+  const label = typeof req.query.label === "string" && req.query.label ? req.query.label : null;
+  if (label) {
+    params.push(label);
+    clauses.push(`$${params.length} = ANY(labels)`);
+  }
   const whereSql = clauses.join(" AND ");
 
   const { rows: countRows } = await pool.query(`SELECT count(*) FROM contacts WHERE ${whereSql}`, params);
@@ -83,4 +91,54 @@ contactsRouter.delete("/contacts/:id", requireAuth, requireOwnerOrAdmin, async (
   ]);
   if (!rowCount) return res.status(404).json({ error: "Kontak tidak ditemukan" });
   res.json({ ok: true });
+});
+
+const labelsSchema = z.object({ labels: z.array(z.string().min(1).max(40)).max(20) });
+
+/** F-29: ganti seluruh label sebuah kontak (dipakai untuk segmentasi). */
+contactsRouter.patch("/contacts/:id/labels", requireAuth, async (req: AuthedRequest, res) => {
+  const parsed = labelsSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+  const { rows } = await pool.query(
+    `UPDATE contacts SET labels = $1 WHERE id = $2 AND organization_id = $3
+     RETURNING id, wa_number, name, labels, pipeline_stage, created_at`,
+    [parsed.data.labels, req.params.id, req.auth!.organizationId]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Kontak tidak ditemukan" });
+  res.json(rows[0]);
+});
+
+/** F-29: daftar semua label yang dipakai, untuk mengisi dropdown penyaring. */
+contactsRouter.get("/contacts/labels", requireAuth, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT unnest(labels) AS label FROM contacts
+     WHERE organization_id = $1 AND labels IS NOT NULL
+     ORDER BY 1`,
+    [req.auth!.organizationId]
+  );
+  res.json({ items: rows.map((r) => r.label) });
+});
+
+/** F-40: ekspor kontak ke CSV (Laporan Order sudah punya, kontak belum). */
+contactsRouter.get("/contacts/export.csv", requireAuth, async (req: AuthedRequest, res) => {
+  const { rows } = await pool.query(
+    `SELECT wa_number, name, array_to_string(labels, '|') AS labels, pipeline_stage,
+            to_char(created_at AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD HH24:MI') AS created_at
+     FROM contacts WHERE organization_id = $1 ORDER BY created_at DESC LIMIT 20000`,
+    [req.auth!.organizationId]
+  );
+
+  const escape = (v: unknown) => {
+    const t = v === null || v === undefined ? "" : String(v);
+    return /[",\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  };
+  const header = ["nomor_wa", "nama", "label", "tahap", "dibuat"].join(",");
+  const body = rows
+    .map((r) => [r.wa_number, r.name, r.labels, r.pipeline_stage, r.created_at].map(escape).join(","))
+    .join("\n");
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", 'attachment; filename="kontak.csv"');
+  res.send("\uFEFF" + header + "\n" + body);
 });
