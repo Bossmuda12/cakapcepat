@@ -10,6 +10,7 @@ import OAuthCallback from "./pages/OAuthCallback";
 import CompleteProfile from "./pages/CompleteProfile";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import DataDeletion from "./pages/DataDeletion";
+import Landing from "./pages/Landing";
 import Bootstrap from "./pages/Bootstrap";
 import Overview from "./pages/Overview";
 import Monitor from "./pages/Monitor";
@@ -53,6 +54,8 @@ function AppRoutes() {
       <Route path="/oauth-callback" element={<OAuthCallback />} />
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/data-deletion" element={<DataDeletion />} />
+      {/* Halaman publik untuk mesin pencari — lihat web/src/pages/Landing.jsx */}
+      <Route path="/tentang" element={<Landing />} />
 
       {/* Semua rute lain butuh sesi (atau nampilin Login/Bootstrap kalau belum) */}
       <Route

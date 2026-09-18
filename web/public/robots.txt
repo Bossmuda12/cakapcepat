@@ -1,0 +1,21 @@
+User-agent: *
+Allow: /$
+Allow: /tentang
+Allow: /privacy-policy
+Allow: /data-deletion
+
+# Halaman di bawah ini butuh login — tidak ada gunanya diindeks
+Disallow: /api/
+Disallow: /uploads/
+Disallow: /conversations
+Disallow: /contacts
+Disallow: /orders
+Disallow: /orders-list
+Disallow: /monitor
+Disallow: /settings
+Disallow: /audit-log
+Disallow: /reset-password
+Disallow: /verify-email
+Disallow: /oauth-callback
+
+Sitemap: https://www.cakapcepat.com/sitemap.xml

@@ -74,33 +74,39 @@ export default function Overview() {
       {stats && (
         <div className="kpi-grid">
           <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/channels")}>
+            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
             <Icon path={ICONS.channels} />
             <div className="label">Nomor WhatsApp</div>
             <div className="value">{stats.channels}</div>
             <div className="label">{stats.channelsConnected} terhubung</div>
           </div>
           <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/conversations")}>
+            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
             <Icon path={ICONS.conversations} />
             <div className="label">Percakapan ({presetLabel(range.preset)})</div>
             <div className="value">{stats.conversations}</div>
             <div className="label">{stats.openConversations} masih terbuka</div>
           </div>
           <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/conversations")}>
+            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
             <Icon path={ICONS.messages} />
             <div className="label">Pesan Terkirim</div>
             <div className="value">{stats.messagesSent}</div>
           </div>
           <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/contacts")}>
+            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
             <Icon path={ICONS.contacts} />
             <div className="label">Kontak Baru</div>
             <div className="value">{stats.contacts}</div>
           </div>
           <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/products")}>
+            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
             <Icon path={ICONS.products} />
             <div className="label">Produk</div>
             <div className="value">{stats.products}</div>
           </div>
           <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/departments")}>
+            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
             <Icon path={ICONS.departments} />
             <div className="label">Departemen</div>
             <div className="value">{stats.departments}</div>

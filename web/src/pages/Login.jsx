@@ -136,6 +136,26 @@ export default function Login() {
           )}
           {resendMessage && <div className="notice-box">{resendMessage}</div>}
 
+          {(oauthConfig.google || oauthConfig.facebook) && (
+            <>
+              <div className="oauth-buttons">
+                {oauthConfig.google && (
+                  <a href="/api/auth/google" className="oauth-btn">
+                    <GoogleIcon />
+                    Masuk dengan Google
+                  </a>
+                )}
+                {oauthConfig.facebook && (
+                  <a href="/api/auth/facebook" className="oauth-btn">
+                    <FacebookIcon />
+                    Masuk dengan Facebook
+                  </a>
+                )}
+              </div>
+              <div className="auth-divider">atau masuk dengan email</div>
+            </>
+          )}
+
           <form onSubmit={onSubmit}>
             <div className="field">
               <label>Email</label>
@@ -160,34 +180,6 @@ export default function Login() {
           </div>
           <div className="auth-links">
             Belum punya akun? <Link to="/register">Daftar di sini</Link>
-          </div>
-
-          <div className="auth-divider">atau masuk dengan</div>
-          <div className="oauth-buttons">
-            {oauthConfig.google ? (
-              <a href="/api/auth/google" className="oauth-btn">
-                <GoogleIcon />
-                Google
-              </a>
-            ) : (
-              <button type="button" className="oauth-btn" disabled title="Segera hadir">
-                <GoogleIcon />
-                Google
-                <span className="oauth-soon">Segera</span>
-              </button>
-            )}
-            {oauthConfig.facebook ? (
-              <a href="/api/auth/facebook" className="oauth-btn">
-                <FacebookIcon />
-                Facebook
-              </a>
-            ) : (
-              <button type="button" className="oauth-btn" disabled title="Segera hadir">
-                <FacebookIcon />
-                Facebook
-                <span className="oauth-soon">Segera</span>
-              </button>
-            )}
           </div>
         </div>
       </div>
