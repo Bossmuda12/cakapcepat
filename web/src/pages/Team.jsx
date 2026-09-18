@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../AuthContext";
 import Modal from "../components/Modal";
+import PasswordInput from "../components/PasswordInput";
+import ActionBtn from "../components/ActionBtn";
 
 const emptyForm = { name: "", email: "", password: "", role: "agent" };
 const emptyEditForm = { name: "", email: "", password: "", role: "agent" };
@@ -164,8 +166,8 @@ export default function Team() {
           </div>
           <div className="field">
             <label>Password sementara (min. 8 karakter)</label>
-            <input
-              type="password"
+            <PasswordInput
+              autoComplete="new-password"
               value={form.password}
               onChange={update("password")}
               minLength={8}
@@ -199,8 +201,8 @@ export default function Team() {
           </div>
           <div className="field">
             <label>Password baru (kosongkan jika tidak diganti)</label>
-            <input
-              type="password"
+            <PasswordInput
+              autoComplete="new-password"
               value={editForm.password}
               onChange={updateEditForm("password")}
               minLength={8}
@@ -303,20 +305,17 @@ export default function Team() {
               </div>
               {canManage && (
                 <div className="team-card-actions">
-                  <button type="button" className="btn-link" onClick={() => openEdit(r)}>
+                  <ActionBtn kind="edit" onClick={() => openEdit(r)}>
                     Edit
-                  </button>
-                  {" · "}
-                  <button
-                    type="button"
-                    className="btn-link"
-                    style={{ color: "var(--danger)" }}
+                  </ActionBtn>
+                  <ActionBtn
+                    kind="hapus"
                     disabled={r.id === user?.id}
                     title={r.id === user?.id ? "Tidak bisa menghapus akun sendiri" : undefined}
                     onClick={() => setDeletingRow(r)}
                   >
                     Hapus
-                  </button>
+                  </ActionBtn>
                 </div>
               )}
             </div>

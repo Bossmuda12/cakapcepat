@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
+import ActionBtn from "../components/ActionBtn";
 
 export default function Departments() {
   const [rows, setRows] = useState(null);
@@ -183,18 +184,15 @@ export default function Departments() {
                   <td>{r.name}</td>
                   <td>{r.channel_count}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <button type="button" className="btn-link" onClick={() => openEdit(r)}>
+                    <ActionBtn kind="edit" onClick={() => openEdit(r)}>
                       Ubah Nama
-                    </button>
-                    {" · "}
-                    <button
-                      type="button"
-                      className="btn-link"
-                      style={{ color: "var(--danger)" }}
+                    </ActionBtn>
+                    <ActionBtn
+                      kind="hapus"
                       onClick={() => setDeletingRow(r)}
                     >
                       Hapus
-                    </button>
+                    </ActionBtn>
                   </td>
                 </tr>
               ))}

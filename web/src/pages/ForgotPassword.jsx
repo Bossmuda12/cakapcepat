@@ -28,7 +28,7 @@ export default function ForgotPassword() {
         <div className="auth-visual-content">
           <div className="auth-visual-logo">
             <span className="auth-visual-logo-chip">
-              <img src="/logo.png" alt="CakapCepat" />
+              <img src="/logo-light.png" alt="CakapCepat" />
             </span>
           </div>
           <h1>Lupa password? Nggak masalah.</h1>
@@ -41,7 +41,7 @@ export default function ForgotPassword() {
       <div className="auth-form-side">
         <div className="auth-form-card">
           <div className="auth-logo-mobile">
-            <img src="/logo.png" alt="CakapCepat" />
+            <img src="/logo-light.png" alt="CakapCepat" />
           </div>
 
           {done ? (

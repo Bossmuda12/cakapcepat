@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import DateRangeFilter from "../components/DateRangeFilter";
 import { defaultRange } from "../dateRangePresets";
+import Check from "../components/Check";
 
 function formatRupiah(value) {
   if (value === null || value === undefined) return "—";
@@ -303,14 +304,11 @@ export default function Leads() {
           </div>
           <div className="field">
             <label>Status</label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
-              <input
-                type="checkbox"
-                checked={form.enabled}
-                onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
-              />
-              Aktifkan laporan harian
-            </label>
+            <Check
+              checked={form.enabled}
+              onChange={(e) => setForm((f) => ({ ...f, enabled: e.target.checked }))}
+              label="Aktifkan laporan harian"
+            />
           </div>
         </div>
         <button className="btn" type="submit" disabled={savingSettings}>

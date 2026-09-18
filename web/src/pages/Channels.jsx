@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
 import QrConnectModal from "../components/QrConnectModal";
+import ActionBtn from "../components/ActionBtn";
 
 const emptyForm = {
   label: "",
@@ -466,20 +467,17 @@ export default function Channels() {
                     )}
                     {r.connection_type !== "qr_session" && (
                       <>
-                        <button type="button" className="btn-link" onClick={() => openEdit(r)}>
+                        <ActionBtn kind="edit" onClick={() => openEdit(r)}>
                           Edit
-                        </button>
-                        {" · "}
+                        </ActionBtn>
                       </>
                     )}
-                    <button
-                      type="button"
-                      className="btn-link"
-                      style={{ color: "var(--danger)" }}
+                    <ActionBtn
+                      kind="hapus"
                       onClick={() => setDeletingRow(r)}
                     >
                       Hapus
-                    </button>
+                    </ActionBtn>
                   </td>
                 </tr>
               ))}

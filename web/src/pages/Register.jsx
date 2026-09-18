@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
+import PasswordInput from "../components/PasswordInput";
 
 const FEATURES = [
   "Setup dalam hitungan menit, langsung bisa dipakai tim kamu",
@@ -55,7 +56,7 @@ export default function Register() {
         <div className="auth-visual-content">
           <div className="auth-visual-logo">
             <span className="auth-visual-logo-chip">
-              <img src="/logo.png" alt="CakapCepat" />
+              <img src="/logo-light.png" alt="CakapCepat" />
             </span>
           </div>
           <h1>Mulai otomasi WhatsApp bisnismu hari ini</h1>
@@ -78,7 +79,7 @@ export default function Register() {
       <div className="auth-form-side">
         <div className="auth-form-card">
           <div className="auth-logo-mobile">
-            <img src="/logo.png" alt="CakapCepat" />
+            <img src="/logo-light.png" alt="CakapCepat" />
           </div>
 
           {done ? (
@@ -120,8 +121,8 @@ export default function Register() {
                 </div>
                 <div className="field">
                   <label>Password (min. 8 karakter)</label>
-                  <input
-                    type="password"
+                  <PasswordInput
+                    autoComplete="new-password"
                     value={form.password}
                     onChange={update("password")}
                     minLength={8}
@@ -130,8 +131,8 @@ export default function Register() {
                 </div>
                 <div className="field">
                   <label>Konfirmasi Password</label>
-                  <input
-                    type="password"
+                  <PasswordInput
+                    autoComplete="new-password"
                     value={form.confirmPassword}
                     onChange={update("confirmPassword")}
                     minLength={8}

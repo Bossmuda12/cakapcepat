@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useAuth } from "../AuthContext";
 import { api } from "../api";
+import PasswordInput from "../components/PasswordInput";
 
 const FEATURES = [
   "Balas & kelola semua percakapan WhatsApp dalam satu dashboard",
@@ -90,7 +91,7 @@ export default function Login() {
         <div className="auth-visual-content">
           <div className="auth-visual-logo">
             <span className="auth-visual-logo-chip">
-              <img src="/logo.png" alt="CakapCepat" />
+              <img src="/logo-light.png" alt="CakapCepat" />
             </span>
           </div>
           <h1>Otomasi WhatsApp yang bikin bisnis kamu jalan sendiri</h1>
@@ -163,10 +164,11 @@ export default function Login() {
             </div>
             <div className="field">
               <label>Password</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                name="password"
                 required
               />
             </div>

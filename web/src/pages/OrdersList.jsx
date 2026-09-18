@@ -4,6 +4,8 @@ import Modal from "../components/Modal";
 import DateRangeFilter from "../components/DateRangeFilter";
 import { defaultRange } from "../dateRangePresets";
 import OrdersStats from "./OrdersStats";
+import Check from "../components/Check";
+import ActionBtn from "../components/ActionBtn";
 
 const PAGE_SIZE = 20;
 
@@ -479,10 +481,13 @@ export default function OrdersList() {
           </div>
           <div className="field">
             <label>&nbsp;</label>
-            <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400, height: 38 }}>
-              <input type="checkbox" checked={problemOnly} onChange={(e) => setProblemOnly(e.target.checked)} />
-              Bermasalah saja
-            </label>
+            <div style={{ display: "flex", alignItems: "center", height: 38 }}>
+              <Check
+                checked={problemOnly}
+                onChange={(e) => setProblemOnly(e.target.checked)}
+                label="Bermasalah saja"
+              />
+            </div>
           </div>
         </div>
         <div className="toolbar" style={{ marginBottom: 0 }}>
@@ -558,25 +563,21 @@ export default function OrdersList() {
                     </td>
                     <td className="text-muted">{formatDateTime(o.created_at)}</td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      <button type="button" className="btn-link" onClick={() => openEdit(o)}>
+                      <ActionBtn kind="edit" onClick={() => openEdit(o)}>
                         Sunting
-                      </button>
-                      {" · "}
-                      <button type="button" className="btn-link" onClick={() => openShipping(o)}>
+                      </ActionBtn>
+                      <ActionBtn kind="lihat" onClick={() => openShipping(o)}>
                         Pengiriman
-                      </button>
-                      {" · "}
-                      <button
-                        type="button"
-                        className="btn-link"
-                        style={{ color: "var(--danger)" }}
+                      </ActionBtn>
+                      <ActionBtn
+                        kind="hapus"
                         onClick={() => {
                           setDeleteError("");
                           setDeletingRow(o);
                         }}
                       >
                         Hapus
-                      </button>
+                      </ActionBtn>
                     </td>
                   </tr>
                 ))}
@@ -930,14 +931,11 @@ export default function OrdersList() {
               />
             </div>
             <div className="field">
-              <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
-                <input
-                  type="checkbox"
-                  checked={shippingForm.hasProblem}
-                  onChange={(e) => setShippingForm((f) => ({ ...f, hasProblem: e.target.checked }))}
-                />
-                Tandai bermasalah
-              </label>
+              <Check
+                checked={shippingForm.hasProblem}
+                onChange={(e) => setShippingForm((f) => ({ ...f, hasProblem: e.target.checked }))}
+                label="Tandai bermasalah"
+              />
             </div>
             {shippingForm.hasProblem && (
               <div className="field">

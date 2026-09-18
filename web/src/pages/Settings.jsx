@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import { useAuth } from "../AuthContext";
 import { api } from "../api";
+import PasswordInput from "../components/PasswordInput";
 
 // Resize + kompres gambar di browser sebelum dikirim ke server, supaya foto
 // profil dari kamera HP (bisa 5-10MB) tidak membebani body request. Hasil
@@ -32,6 +33,11 @@ function resizeImageToDataUrl(file, maxSize = 320, quality = 0.85) {
 
 export default function Settings() {
   const { user, refresh } = useAuth();
+  /* Profil dan keamanan akun digabung dalam SATU panel bertab — dulu dua kotak
+     terpisah berdampingan, yang membuat halaman terasa seperti dua halaman. */
+  const [tab, setTab] = useState(
+    () => (typeof window !== "undefined" && window.location.hash === "#keamanan" ? "keamanan" : "profil")
+  );
   const [name, setName] = useState(user?.name || "");
   const [username, setUsername] = useState(user?.username || "");
   const [email, setEmail] = useState(user?.email || "");
@@ -122,11 +128,39 @@ export default function Settings() {
   return (
     <div>
       <h1>Pengaturan Akun</h1>
-      <p className="page-subtitle">Ubah foto, nama, username, email, dan password akun kamu sendiri.</p>
+      <p className="page-subtitle">Profil dan keamanan akun kamu dalam satu tempat.</p>
 
-      <div className="settings-grid">
-        <div className="panel">
-          <h2>Profil</h2>
+      <div className="panel settings-panel">
+        <div className="settings-tabs" role="tablist" aria-label="Bagian pengaturan">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "profil"}
+            className={`settings-tab ${tab === "profil" ? "active" : ""}`}
+            onClick={() => setTab("profil")}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="8" r="4" />
+              <path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" />
+            </svg>
+            Profil
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "keamanan"}
+            className={`settings-tab ${tab === "keamanan" ? "active" : ""}`}
+            onClick={() => setTab("keamanan")}
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="4" y="10" width="16" height="10" rx="2" />
+              <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+            </svg>
+            Keamanan
+          </button>
+        </div>
+
+        <div className="settings-tab-body" hidden={tab !== "profil"}>
           {profileError && <div className="error-box">{profileError}</div>}
           {profileSuccess && <div className="success-box">{profileSuccess}</div>}
           <form onSubmit={onSaveProfile}>
@@ -191,36 +225,35 @@ export default function Settings() {
           </form>
         </div>
 
-        <div className="panel">
-          <h2>Ganti Password</h2>
+        <div className="settings-tab-body" hidden={tab !== "keamanan"}>
           {passwordError && <div className="error-box">{passwordError}</div>}
           {passwordSuccess && <div className="success-box">{passwordSuccess}</div>}
           <form onSubmit={onChangePassword}>
             <div className="field">
               <label>Password Saat Ini</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
+                autoComplete="current-password"
                 required
               />
             </div>
             <div className="field">
               <label>Password Baru</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
+                autoComplete="new-password"
                 minLength={8}
                 required
               />
             </div>
             <div className="field">
               <label>Konfirmasi Password Baru</label>
-              <input
-                type="password"
+              <PasswordInput
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
+                autoComplete="new-password"
                 minLength={8}
                 required
               />

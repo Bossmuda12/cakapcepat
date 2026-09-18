@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useAuth } from "../AuthContext";
+import PasswordInput from "../components/PasswordInput";
 
 export default function Bootstrap() {
   const { bootstrap } = useAuth();
@@ -31,7 +32,7 @@ export default function Bootstrap() {
     <div className="auth-shell">
       <div className="auth-card">
         <div className="auth-logo">
-          <img src="/logo.png" alt="CakapCepat" />
+          <img src="/logo-light.png" alt="CakapCepat" />
           <div className="auth-logo-by">By TahaGroup</div>
         </div>
         <h1>Setup Awal CakapCepat</h1>
@@ -54,8 +55,8 @@ export default function Bootstrap() {
           </div>
           <div className="field">
             <label>Password (min. 8 karakter)</label>
-            <input
-              type="password"
+            <PasswordInput
+              autoComplete="new-password"
               value={form.password}
               onChange={update("password")}
               minLength={8}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
+import ActionBtn from "../components/ActionBtn";
 
 const PAGE_SIZE = 20;
 
@@ -151,17 +152,15 @@ export default function FollowUps() {
                     </td>
                     <td>
                       {f.status === "scheduled" && (
-                        <button
-                          type="button"
-                          className="btn-link"
-                          style={{ color: "var(--danger)" }}
+                        <ActionBtn
+                          kind="hapus"
                           onClick={() => {
                             setCancelError("");
                             setCancellingRow(f);
                           }}
                         >
                           Batalkan
-                        </button>
+                        </ActionBtn>
                       )}
                     </td>
                   </tr>

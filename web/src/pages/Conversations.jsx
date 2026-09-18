@@ -5,6 +5,7 @@ import Modal from "../components/Modal";
 import DateRangeFilter from "../components/DateRangeFilter";
 import EmojiPicker from "../components/EmojiPicker";
 import { defaultRange } from "../dateRangePresets";
+import SearchField from "../components/SearchField";
 
 const PAGE_SIZE = 50;
 
@@ -340,19 +341,12 @@ export default function Conversations() {
         {/* ---------- Panel 1: daftar percakapan ---------- */}
         <aside className="chat-list">
           <div className="chat-list-head">
-            <div className="chat-search">
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" />
-                <path d="m20 20-3.5-3.5" />
-              </svg>
-              <input
-                type="search"
-                placeholder="Cari nama atau nomor..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                aria-label="Cari percakapan"
-              />
-            </div>
+            <SearchField
+              className="chat-search"
+              placeholder="Cari nama atau nomor..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+            />
             <select
               className="chat-filter"
               value={productFilter}

@@ -3,6 +3,8 @@ import { api, getToken } from "../api";
 import Modal from "../components/Modal";
 import DateRangeFilter from "../components/DateRangeFilter";
 import { defaultRange } from "../dateRangePresets";
+import SearchField from "../components/SearchField";
+import ActionBtn from "../components/ActionBtn";
 
 const PAGE_SIZE = 50;
 
@@ -206,8 +208,7 @@ export default function Contacts() {
       </div>
 
       <div className="toolbar" style={{ margin: "10px 0 14px" }}>
-        <input
-          type="text"
+        <SearchField
           placeholder="Cari nama atau nomor..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
@@ -402,17 +403,15 @@ export default function Contacts() {
                       </td>
                       <td>
                         <div style={{ display: "flex", gap: 12 }}>
-                          <button type="button" className="btn-link" onClick={() => openLabelEditor(r)}>
+                          <ActionBtn kind="edit" onClick={() => openLabelEditor(r)}>
                             Label
-                          </button>
-                          <button
-                            type="button"
-                            className="btn-link"
-                            style={{ color: "var(--danger)" }}
+                          </ActionBtn>
+                          <ActionBtn
+                            kind="hapus"
                             onClick={() => setDeletingRow(r)}
                           >
                             Hapus
-                          </button>
+                          </ActionBtn>
                         </div>
                       </td>
                     </tr>

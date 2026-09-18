@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
+import ActionBtn from "../components/ActionBtn";
 
 // Harga selalu disimpan backend dalam *Cents (sen) — lihat catatan endpoint
 // produk. Ditampilkan/diterima di sini dalam RM supaya owner tidak perlu
@@ -327,21 +328,18 @@ export default function Products() {
                       </button>
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
-                      <button type="button" className="btn-link" onClick={() => openEditCategory(c)}>
+                      <ActionBtn kind="edit" onClick={() => openEditCategory(c)}>
                         Edit
-                      </button>
-                      {" · "}
-                      <button
-                        type="button"
-                        className="btn-link"
-                        style={{ color: "var(--danger)" }}
+                      </ActionBtn>
+                      <ActionBtn
+                        kind="hapus"
                         onClick={() => {
                           setDeleteCategoryError("");
                           setDeletingCategory(c);
                         }}
                       >
                         Hapus
-                      </button>
+                      </ActionBtn>
                     </td>
                   </tr>
                 ))}
@@ -412,21 +410,18 @@ export default function Products() {
                       </td>
                       <td>{p.channel_count}</td>
                       <td style={{ whiteSpace: "nowrap" }}>
-                        <button type="button" className="btn-link" onClick={() => openEditProduct(p)}>
+                        <ActionBtn kind="edit" onClick={() => openEditProduct(p)}>
                           Edit
-                        </button>
-                        {" · "}
-                        <button
-                          type="button"
-                          className="btn-link"
-                          style={{ color: "var(--danger)" }}
+                        </ActionBtn>
+                        <ActionBtn
+                          kind="hapus"
                           onClick={() => {
                             setDeleteProductError("");
                             setDeletingProduct(p);
                           }}
                         >
                           Hapus
-                        </button>
+                        </ActionBtn>
                       </td>
                     </tr>
                     {expandedProductId === p.id && (
@@ -519,21 +514,18 @@ export default function Products() {
                                           </button>
                                         </td>
                                         <td style={{ whiteSpace: "nowrap" }}>
-                                          <button type="button" className="btn-link" onClick={() => startEditVariant(v)}>
+                                          <ActionBtn kind="edit" onClick={() => startEditVariant(v)}>
                                             Edit
-                                          </button>
-                                          {" · "}
-                                          <button
-                                            type="button"
-                                            className="btn-link"
-                                            style={{ color: "var(--danger)" }}
+                                          </ActionBtn>
+                                          <ActionBtn
+                                            kind="hapus"
                                             onClick={() => {
                                               setDeleteVariantError("");
                                               setDeletingVariant(v);
                                             }}
                                           >
                                             Hapus
-                                          </button>
+                                          </ActionBtn>
                                         </td>
                                       </tr>
                                     )

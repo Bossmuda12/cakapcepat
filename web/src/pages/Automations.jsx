@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
+import PasswordInput from "../components/PasswordInput";
 
 const TRIGGER_LABELS = {
   keyword: "Kata kunci",
@@ -184,8 +185,8 @@ export default function Automations() {
             <label>
               Claude API Key {settings?.ai.apiKeyMasked ? `(saat ini: ${settings.ai.apiKeyMasked})` : ""}
             </label>
-            <input
-              type="password"
+            <PasswordInput
+              autoComplete="off"
               value={aiForm.apiKey}
               onChange={(e) => setAiForm((f) => ({ ...f, apiKey: e.target.value }))}
               placeholder="sk-ant-... (kosongkan kalau tidak diganti)"

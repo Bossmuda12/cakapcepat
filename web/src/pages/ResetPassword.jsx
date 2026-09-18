@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
+import PasswordInput from "../components/PasswordInput";
 
 export default function ResetPassword() {
   const [params] = useSearchParams();
@@ -35,7 +36,7 @@ export default function ResetPassword() {
         <div className="auth-visual-content">
           <div className="auth-visual-logo">
             <span className="auth-visual-logo-chip">
-              <img src="/logo.png" alt="CakapCepat" />
+              <img src="/logo-light.png" alt="CakapCepat" />
             </span>
           </div>
           <h1>Buat password baru</h1>
@@ -46,7 +47,7 @@ export default function ResetPassword() {
       <div className="auth-form-side">
         <div className="auth-form-card">
           <div className="auth-logo-mobile">
-            <img src="/logo.png" alt="CakapCepat" />
+            <img src="/logo-light.png" alt="CakapCepat" />
           </div>
 
           {!token ? (
@@ -88,8 +89,8 @@ export default function ResetPassword() {
               <form onSubmit={onSubmit}>
                 <div className="field">
                   <label>Password baru</label>
-                  <input
-                    type="password"
+                  <PasswordInput
+                    autoComplete="new-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     minLength={8}
@@ -98,8 +99,8 @@ export default function ResetPassword() {
                 </div>
                 <div className="field">
                   <label>Konfirmasi password baru</label>
-                  <input
-                    type="password"
+                  <PasswordInput
+                    autoComplete="new-password"
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     minLength={8}

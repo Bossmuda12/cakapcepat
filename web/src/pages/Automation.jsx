@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Check from "../components/Check";
 
 function centsToRmInput(cents) {
   if (cents === null || cents === undefined) return "";
@@ -227,14 +228,11 @@ export default function Automation() {
         {saved && <div className="success-box">Pengaturan tersimpan.</div>}
 
         <div className="field">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
-            <input
-              type="checkbox"
-              checked={form.groupReportEnabled}
-              onChange={(e) => setForm((f) => ({ ...f, groupReportEnabled: e.target.checked }))}
-            />
-            Kirim rekap closing ke grup
-          </label>
+          <Check
+            checked={form.groupReportEnabled}
+            onChange={(e) => setForm((f) => ({ ...f, groupReportEnabled: e.target.checked }))}
+            label="Kirim rekap closing ke grup"
+          />
           <small className="field-hint">
             Kalau dinyalakan, setiap pesanan berstatus "Closing" otomatis diposting ke grup closingan
             yang dipilih di atas.
@@ -242,14 +240,11 @@ export default function Automation() {
         </div>
 
         <div className="field">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
-            <input
-              type="checkbox"
-              checked={form.groupDailySummaryEnabled}
-              onChange={(e) => setForm((f) => ({ ...f, groupDailySummaryEnabled: e.target.checked }))}
-            />
-            Kirim ringkasan harian ke grup
-          </label>
+          <Check
+            checked={form.groupDailySummaryEnabled}
+            onChange={(e) => setForm((f) => ({ ...f, groupDailySummaryEnabled: e.target.checked }))}
+            label="Kirim ringkasan harian ke grup"
+          />
           <small className="field-hint">
             Kalau dinyalakan, grup closingan akan menerima ringkasan performa hari itu (jumlah closing,
             retur, dll) sekali sehari.
@@ -273,14 +268,11 @@ export default function Automation() {
         </div>
 
         <div className="field">
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontWeight: 400 }}>
-            <input
-              type="checkbox"
-              checked={form.followupEnabled}
-              onChange={(e) => setForm((f) => ({ ...f, followupEnabled: e.target.checked }))}
-            />
-            Aktifkan follow-up otomatis
-          </label>
+          <Check
+            checked={form.followupEnabled}
+            onChange={(e) => setForm((f) => ({ ...f, followupEnabled: e.target.checked }))}
+            label="Aktifkan follow-up otomatis"
+          />
           <small className="field-hint">
             Kalau dinyalakan, pelanggan yang tidak membalas akan otomatis di-follow-up ulang secara
             berjadwal (H+1, H+3, H+7, dst) sampai batas percobaan di bawah.

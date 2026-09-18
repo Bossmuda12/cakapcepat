@@ -108,8 +108,7 @@ export default function Landing() {
 
       <header className="landing-nav">
         <div className="landing-brand">
-          <img src="/logo.png" alt="Logo CakapCepat" />
-          <span>CakapCepat</span>
+          <img src="/logo-light.png" alt="CakapCepat" />
         </div>
         <nav className="landing-nav-links">
           <a href="#visi">Visi &amp; Misi</a>
@@ -124,7 +123,6 @@ export default function Landing() {
 
       <main className="landing-main">
         <section className="landing-hero">
-          <p className="landing-eyebrow">Produk Taha Group</p>
           <h1>
             Chat pelanggan dibalas otomatis.
             <br />
