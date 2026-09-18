@@ -1,0 +1,17 @@
+{
+  "name": "CakapCepat",
+  "short_name": "CakapCepat",
+  "description": "Otomatisasi WhatsApp berbasis AI untuk penjual COD — produk Taha Group.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0d1220",
+  "theme_color": "#0d1220",
+  "lang": "id",
+  "icons": [
+    { "src": "/favicon-32x32.png", "sizes": "32x32", "type": "image/png" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/favicon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/favicon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

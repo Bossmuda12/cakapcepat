@@ -77,7 +77,7 @@ export default function ResetPassword() {
                 Silakan masuk dengan password baru kamu.
               </p>
               <div className="auth-links">
-                <Link to="/">Ke halaman masuk</Link>
+                <Link to="/masuk">Ke halaman masuk</Link>
               </div>
             </>
           ) : (

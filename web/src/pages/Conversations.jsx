@@ -7,6 +7,49 @@ import { defaultRange } from "../dateRangePresets";
 
 const PAGE_SIZE = 50;
 
+/* Inisial + warna tetap per kontak — daftar inbox jauh lebih cepat dipindai
+   dengan avatar daripada dengan blok teks seragam. */
+const AVATAR_TONES = ["#6d5dfb", "#0891b2", "#059669", "#d97706", "#db2777", "#2563eb"];
+
+function Avatar({ name, number, small, large }) {
+  const label = (name || number || "?").trim();
+  const initial = label.charAt(0).toUpperCase();
+  let hash = 0;
+  for (let i = 0; i < label.length; i++) hash = (hash * 31 + label.charCodeAt(i)) % 997;
+  const tone = AVATAR_TONES[hash % AVATAR_TONES.length];
+  const cls = `chat-avatar${small ? " small" : ""}${large ? " large" : ""}`;
+  return (
+    <span className={cls} style={{ background: tone }} aria-hidden="true">
+      {initial}
+    </span>
+  );
+}
+
+/* Cuplikan pesan terakhir: teks apa adanya, atau keterangan jenis media. */
+function previewOf(row) {
+  if (row.last_message_body && row.last_message_body.trim()) {
+    const prefix = row.last_message_direction === "outbound" ? (row.last_message_sender_type === "ai" ? "AI: " : "Kita: ") : "";
+    return prefix + row.last_message_body.replace(/\s+/g, " ").slice(0, 90);
+  }
+  if (row.last_message_media_type) {
+    const jenis = { image: "Foto", video: "Video", audio: "Pesan suara", sticker: "Stiker" };
+    return jenis[row.last_message_media_type] || "Dokumen";
+  }
+  return "Belum ada pesan";
+}
+
+function shortTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  if (sameDay) return d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
+  const kemarin = new Date(now);
+  kemarin.setDate(now.getDate() - 1);
+  if (d.toDateString() === kemarin.toDateString()) return "Kemarin";
+  return d.toLocaleDateString("id-ID", { day: "2-digit", month: "short" });
+}
+
 function formatTime(ts) {
   if (!ts) return "";
   return new Date(ts).toLocaleString("id-ID", {
@@ -34,6 +77,7 @@ export default function Conversations() {
   const [ownerFilter, setOwnerFilter] = useState(""); // "" = semua tim; klik nama -> hanya obrolan nomor dia
   const [products, setProducts] = useState([]);
   const [productFilter, setProductFilter] = useState(""); // "" = semua produk
+  const [detailOpen, setDetailOpen] = useState(true); // panel kanan (detail pelanggan)
 
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [deletingConversation, setDeletingConversation] = useState(false);
@@ -222,97 +266,117 @@ export default function Conversations() {
   const rangeEnd = Math.min(offset + (rows?.length || 0), total);
 
   return (
-    <div>
-      <div className="toolbar" style={{ marginBottom: 6 }}>
+    <div className="chat-page">
+      <div className="chat-page-head">
         <div>
           <h1>Percakapan</h1>
           <p className="page-subtitle">
-            Inbox WhatsApp semua nomor tim. Klik nama anggota tim di bawah untuk lihat obrolan nomor dia saja.
+            Inbox WhatsApp semua nomor tim. Klik nama anggota tim untuk melihat obrolan nomor dia saja.
           </p>
         </div>
         <DateRangeFilter value={range} onChange={setRange} />
       </div>
 
-      {teamMembers.length > 0 && (
-        <div className="team-filter-row">
-          <button
-            type="button"
-            className={`team-filter-chip ${ownerFilter === "" ? "active" : ""}`}
-            onClick={() => setOwnerFilter("")}
-          >
-            Semua Tim
-          </button>
-          {teamMembers.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              className={`team-filter-chip ${ownerFilter === m.id ? "active" : ""}`}
-              onClick={() => setOwnerFilter(m.id)}
-            >
-              {m.name || m.email}
-            </button>
-          ))}
-        </div>
-      )}
-
-      <div className="toolbar" style={{ margin: "10px 0 14px" }}>
-        <input
-          type="text"
-          placeholder="Cari nama atau nomor..."
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          style={{ maxWidth: 260 }}
-        />
-        <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} style={{ maxWidth: 220 }}>
-          <option value="">Semua Produk</option>
-          {products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </div>
-
       {error && <div className="error-box">{error}</div>}
 
-      <div className="inbox-shell">
-        <div className="inbox-list">
-          {rows === null ? (
-            <div className="loading-block">Memuat...</div>
-          ) : rows.length === 0 ? (
-            <div className="empty-state">
-              {ownerFilter || productFilter || q ? "Tidak ada percakapan yang cocok dengan filter ini." : "Belum ada percakapan."}
+      <div className="chat-shell">
+        {/* ---------- Panel 1: daftar percakapan ---------- */}
+        <aside className="chat-list">
+          <div className="chat-list-head">
+            <div className="chat-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <path d="m20 20-3.5-3.5" />
+              </svg>
+              <input
+                type="search"
+                placeholder="Cari nama atau nomor..."
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                aria-label="Cari percakapan"
+              />
             </div>
-          ) : (
-            rows.map((r) => (
-              <button
-                key={r.id}
-                className={`inbox-list-item ${r.id === selectedId ? "active" : ""}`}
-                onClick={() => setSelectedId(r.id)}
-              >
-                <div className="inbox-list-item-top">
-                  <span className="name">{r.contact_name || r.wa_number}</span>
-                  {r.needs_attention && (
-                    <span className="badge red" title={r.attention_reason || "Butuh perhatian"}>
-                      !
-                    </span>
-                  )}
-                  {r.ctwa_clid && <span className="badge yellow">Iklan</span>}
-                </div>
-                <div className="inbox-list-item-bottom">
-                  <span>{r.wa_number}</span>
-                  <span>{formatTime(r.last_message_at)}</span>
-                </div>
-                {r.channel_label && <div className="inbox-list-item-channel">{r.channel_label}</div>}
-              </button>
-            ))
-          )}
+            <select
+              className="chat-filter"
+              value={productFilter}
+              onChange={(e) => setProductFilter(e.target.value)}
+              aria-label="Saring menurut produk"
+            >
+              <option value="">Semua produk</option>
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {teamMembers.length > 0 && (
+              <div className="chat-chiprow">
+                <button
+                  type="button"
+                  className={`chat-chip ${ownerFilter === "" ? "active" : ""}`}
+                  onClick={() => setOwnerFilter("")}
+                >
+                  Semua tim
+                </button>
+                {teamMembers.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    className={`chat-chip ${ownerFilter === m.id ? "active" : ""}`}
+                    onClick={() => setOwnerFilter(m.id)}
+                  >
+                    {m.name || m.email}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="chat-list-scroll">
+            {rows === null ? (
+              <div className="loading-block">Memuat...</div>
+            ) : rows.length === 0 ? (
+              <div className="empty-state">
+                {ownerFilter || productFilter || q
+                  ? "Tidak ada percakapan yang cocok dengan filter ini."
+                  : "Belum ada percakapan."}
+              </div>
+            ) : (
+              rows.map((r) => (
+                <button
+                  key={r.id}
+                  className={`chat-list-item ${r.id === selectedId ? "active" : ""}`}
+                  onClick={() => setSelectedId(r.id)}
+                >
+                  <Avatar name={r.contact_name} number={r.wa_number} />
+                  <div className="chat-list-item-body">
+                    <div className="chat-list-item-top">
+                      <span className="name">{r.contact_name || r.wa_number}</span>
+                      <span className="time">{shortTime(r.last_message_at)}</span>
+                    </div>
+                    <div className="chat-list-item-bottom">
+                      <span className="preview">{previewOf(r)}</span>
+                      {r.needs_attention && (
+                        <span className="dot-alert" title={r.attention_reason || "Butuh perhatian"} />
+                      )}
+                    </div>
+                    <div className="chat-list-item-tags">
+                      {r.ctwa_clid && <span className="tag tag-ad">Iklan</span>}
+                      {r.ai_paused && <span className="tag tag-mute">AI dijeda</span>}
+                      {r.channel_label && <span className="tag">{r.channel_label}</span>}
+                    </div>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+
           {rows !== null && total > 0 && (
-            <div className="pagination-bar">
+            <div className="chat-list-foot">
               <span>
-                Menampilkan {rangeStart}–{rangeEnd} dari {total}
+                {rangeStart}–{rangeEnd} dari {total}
               </span>
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="chat-list-foot-btns">
                 <button
                   type="button"
                   className="btn-link"
@@ -332,72 +396,54 @@ export default function Conversations() {
               </div>
             </div>
           )}
-        </div>
+        </aside>
 
-        <div className="inbox-thread">
+        {/* ---------- Panel 2: percakapan terpilih ---------- */}
+        <section className="chat-thread">
           {!selected ? (
             <div className="empty-state">Pilih percakapan di sebelah kiri.</div>
           ) : (
             <>
-              <div className="inbox-thread-header">
-                <div>
+              <header className="chat-thread-head">
+                <Avatar name={selected.contact_name} number={selected.wa_number} />
+                <div className="chat-thread-head-id">
                   <div className="name">{selected.contact_name || selected.wa_number}</div>
                   <div className="meta">
-                    {selected.wa_number} · {statusBadge(selected.status)}
-                    {selected.ctwa_clid && <span className="badge yellow"> Dari iklan CTWA</span>}
-                    {selected.needs_attention && (
-                      <span className="badge red" title={selected.attention_reason || ""}>
-                        {" "}
-                        Butuh Perhatian{selected.attention_reason ? `: ${selected.attention_reason}` : ""}
-                      </span>
-                    )}
-                    {selected.ai_paused && <span className="badge gray"> AI Dijeda</span>}
+                    {selected.wa_number}
+                    {selected.channel_label ? ` · ${selected.channel_label}` : ""}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <button className="btn secondary" onClick={markClosingWon}>
-                    Tandai Closing
-                  </button>
-                  <button className="btn secondary" disabled={archiveBusy} onClick={toggleArchive}>
-                    {archiveBusy ? "..." : selected.status === "archived" ? "Buka Arsip" : "Arsipkan"}
-                  </button>
+                <div className="chat-thread-head-actions">
+                  {statusBadge(selected.status)}
                   <button
-                    className="btn secondary"
-                    style={{ color: "var(--danger)" }}
-                    onClick={() => {
-                      setDeleteConvError("");
-                      setDeletingConversation(true);
-                    }}
+                    type="button"
+                    className="chat-detail-toggle"
+                    onClick={() => setDetailOpen((v) => !v)}
+                    aria-expanded={detailOpen}
+                    title={detailOpen ? "Sembunyikan detail" : "Tampilkan detail"}
                   >
-                    Hapus
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M12 16v-4M12 8h.01" />
+                    </svg>
                   </button>
                 </div>
-              </div>
+              </header>
 
-              {selected.ai_summary && (
-                <div className="ai-summary-box">
-                  <strong>Ringkasan AI:</strong> {selected.ai_summary}
+              {selected.needs_attention && (
+                <div className="chat-alert">
+                  Butuh perhatian{selected.attention_reason ? `: ${selected.attention_reason}` : ""}
                 </div>
               )}
 
-              <div className="inbox-messages" ref={scrollRef}>
+              <div className="chat-messages" ref={scrollRef}>
                 {messages.length === 0 ? (
                   <div className="empty-state">Belum ada pesan.</div>
                 ) : (
                   messages.map((m) => (
                     <div key={m.id} className={`bubble-row ${m.direction === "outbound" ? "out" : "in"}`}>
                       {m.direction !== "outbound" && (
-                        <button
-                          type="button"
-                          className="bubble-delete"
-                          title="Hapus pesan"
-                          onClick={() => {
-                            setDeleteMsgError("");
-                            setDeletingMessage(m);
-                          }}
-                        >
-                          Hapus
-                        </button>
+                        <Avatar name={selected.contact_name} number={selected.wa_number} small />
                       )}
                       <div
                         className={`bubble ${m.direction === "outbound" ? "out" : "in"} ${
@@ -415,7 +461,7 @@ export default function Conversations() {
                               <audio src={m.media_url} controls />
                             ) : (
                               <a href={m.media_url} target="_blank" rel="noreferrer" className="bubble-media-doc">
-                                📎 Lihat/unduh dokumen
+                                Lihat/unduh dokumen
                               </a>
                             )}
                             {m.transcript && <div className="bubble-transcript">"{m.transcript}"</div>}
@@ -429,38 +475,112 @@ export default function Conversations() {
                           {formatTime(m.created_at)}
                         </div>
                       </div>
-                      {m.direction === "outbound" && (
-                        <button
-                          type="button"
-                          className="bubble-delete"
-                          title="Hapus pesan"
-                          onClick={() => {
-                            setDeleteMsgError("");
-                            setDeletingMessage(m);
-                          }}
-                        >
-                          Hapus
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        className="bubble-delete"
+                        title="Hapus pesan"
+                        aria-label="Hapus pesan"
+                        onClick={() => {
+                          setDeleteMsgError("");
+                          setDeletingMessage(m);
+                        }}
+                      >
+                        <svg viewBox="0 0 24 24" aria-hidden="true">
+                          <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14M10 11v6M14 11v6" />
+                        </svg>
+                      </button>
                     </div>
                   ))
                 )}
               </div>
 
               {sendError && <div className="error-box">{sendError}</div>}
-              <form className="inbox-composer" onSubmit={onSend}>
+              <form className="chat-composer" onSubmit={onSend}>
                 <input
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   placeholder="Tulis balasan..."
+                  aria-label="Tulis balasan"
                 />
-                <button className="btn" type="submit" disabled={sending}>
-                  Kirim
+                <button className="chat-send" type="submit" disabled={sending} aria-label="Kirim">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3 11 20 3l-4 18-6-8-7-2Z" />
+                  </svg>
                 </button>
               </form>
             </>
           )}
-        </div>
+        </section>
+
+        {/* ---------- Panel 3: detail pelanggan ---------- */}
+        {selected && detailOpen && (
+          <aside className="chat-detail">
+            <div className="chat-detail-hero">
+              <Avatar name={selected.contact_name} number={selected.wa_number} large />
+              <div className="chat-detail-name">{selected.contact_name || selected.wa_number}</div>
+              <div className="chat-detail-sub">{selected.wa_number}</div>
+              <div className="chat-detail-badges">
+                {statusBadge(selected.status)}
+                {selected.ai_paused && <span className="badge gray">AI dijeda</span>}
+                {selected.ctwa_clid && <span className="badge yellow">Dari iklan</span>}
+              </div>
+            </div>
+
+            {selected.ai_summary && (
+              <div className="chat-detail-block">
+                <h3>Ringkasan AI</h3>
+                <p>{selected.ai_summary}</p>
+              </div>
+            )}
+
+            <div className="chat-detail-block">
+              <h3>Informasi</h3>
+              <dl className="chat-detail-list">
+                <div>
+                  <dt>Nomor WhatsApp kita</dt>
+                  <dd>{selected.channel_label || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Produk</dt>
+                  <dd>{selected.product_name || "Belum terdeteksi"}</dd>
+                </div>
+                <div>
+                  <dt>Ditangani</dt>
+                  <dd>{selected.assigned_name || "Belum ditugaskan"}</dd>
+                </div>
+                <div>
+                  <dt>Tahap</dt>
+                  <dd>{selected.pipeline_stage || "-"}</dd>
+                </div>
+                <div>
+                  <dt>Pesan terakhir</dt>
+                  <dd>{formatTime(selected.last_message_at) || "-"}</dd>
+                </div>
+              </dl>
+            </div>
+
+            <div className="chat-detail-block">
+              <h3>Tindakan</h3>
+              <div className="chat-detail-actions">
+                <button className="btn secondary" onClick={markClosingWon}>
+                  Tandai closing
+                </button>
+                <button className="btn secondary" disabled={archiveBusy} onClick={toggleArchive}>
+                  {archiveBusy ? "..." : selected.status === "archived" ? "Buka arsip" : "Arsipkan"}
+                </button>
+                <button
+                  className="btn secondary danger-text"
+                  onClick={() => {
+                    setDeleteConvError("");
+                    setDeletingConversation(true);
+                  }}
+                >
+                  Hapus percakapan
+                </button>
+              </div>
+            </div>
+          </aside>
+        )}
       </div>
 
       <Modal

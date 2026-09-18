@@ -7,9 +7,11 @@ import { defaultRange, presetLabel } from "../dateRangePresets";
 
 function Icon({ path }) {
   return (
-    <svg viewBox="0 0 24 24" className="kpi-icon">
-      <path d={path} />
-    </svg>
+    <span className="kpi-icon-chip" aria-hidden="true">
+      <svg viewBox="0 0 24 24" className="kpi-icon">
+        <path d={path} />
+      </svg>
+    </span>
   );
 }
 
@@ -73,44 +75,27 @@ export default function Overview() {
 
       {stats && (
         <div className="kpi-grid">
-          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/channels")}>
-            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
-            <Icon path={ICONS.channels} />
-            <div className="label">Nomor WhatsApp</div>
-            <div className="value">{stats.channels}</div>
-            <div className="label">{stats.channelsConnected} terhubung</div>
-          </div>
-          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/conversations")}>
-            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
-            <Icon path={ICONS.conversations} />
-            <div className="label">Percakapan ({presetLabel(range.preset)})</div>
-            <div className="value">{stats.conversations}</div>
-            <div className="label">{stats.openConversations} masih terbuka</div>
-          </div>
-          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/conversations")}>
-            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
-            <Icon path={ICONS.messages} />
-            <div className="label">Pesan Terkirim</div>
-            <div className="value">{stats.messagesSent}</div>
-          </div>
-          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/contacts")}>
-            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
-            <Icon path={ICONS.contacts} />
-            <div className="label">Kontak Baru</div>
-            <div className="value">{stats.contacts}</div>
-          </div>
-          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/products")}>
-            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
-            <Icon path={ICONS.products} />
-            <div className="label">Produk</div>
-            <div className="value">{stats.products}</div>
-          </div>
-          <div className="kpi-card clickable" style={{ cursor: "pointer" }} onClick={() => navigate("/departments")}>
-            <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
-            <Icon path={ICONS.departments} />
-            <div className="label">Departemen</div>
-            <div className="value">{stats.departments}</div>
-          </div>
+          {[
+            { tone: "cyan", to: "/channels", icon: ICONS.channels, label: "Nomor WhatsApp", value: stats.channels, sub: `${stats.channelsConnected} terhubung` },
+            { tone: "violet", to: "/conversations", icon: ICONS.conversations, label: `Percakapan (${presetLabel(range.preset)})`, value: stats.conversations, sub: `${stats.openConversations} masih terbuka` },
+            { tone: "blue", to: "/conversations", icon: ICONS.messages, label: "Pesan Terkirim", value: stats.messagesSent },
+            { tone: "green", to: "/contacts", icon: ICONS.contacts, label: "Kontak Baru", value: stats.contacts },
+            { tone: "amber", to: "/products", icon: ICONS.products, label: "Produk", value: stats.products },
+            { tone: "pink", to: "/departments", icon: ICONS.departments, label: "Departemen", value: stats.departments },
+          ].map((k) => (
+            <button
+              type="button"
+              key={k.label}
+              className={`kpi-card clickable tone-${k.tone}`}
+              onClick={() => navigate(k.to)}
+            >
+              <span className="kpi-live-dot" title="Data langsung" aria-hidden="true" />
+              <Icon path={k.icon} />
+              <div className="label">{k.label}</div>
+              <div className="value">{k.value}</div>
+              {k.sub ? <div className="label sub">{k.sub}</div> : <div className="label sub">&nbsp;</div>}
+            </button>
+          ))}
         </div>
       )}
 

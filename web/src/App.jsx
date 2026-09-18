@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from "react-router-dom";
 import { AuthProvider, useAuth } from "./AuthContext";
 import Layout from "./components/Layout";
 import Login from "./pages/Login";
@@ -33,12 +33,36 @@ import Courier from "./pages/Courier";
 import KnowledgeBase from "./pages/KnowledgeBase";
 import AuditLog from "./pages/AuditLog";
 
+/**
+ * Halaman muka (/) adalah PROFIL publik CakapCepat, bukan layar login.
+ * Pengunjung baru dan mesin pencari melihat profil; pengguna yang sudah masuk
+ * langsung dialihkan ke dasbor supaya tidak perlu klik dua kali.
+ */
+function Beranda() {
+  const { user, loading, needsBootstrap } = useAuth();
+  if (loading) return <div className="loading-block">Memuat...</div>;
+  if (!needsBootstrap && user && !user.needs_onboarding) return <Navigate to="/dashboard" replace />;
+  return <Landing />;
+}
+
+/** Layar masuk berdiri sendiri di /masuk. */
+function Masuk() {
+  const { user, loading, needsBootstrap } = useAuth();
+  if (loading) return <div className="loading-block">Memuat...</div>;
+  if (needsBootstrap) return <Bootstrap />;
+  if (user && user.needs_onboarding) return <CompleteProfile />;
+  if (user) return <Navigate to="/dashboard" replace />;
+  return <Login />;
+}
+
+/** Penjaga rute dasbor: tanpa sesi, lempar ke /masuk. */
 function Gate({ children }) {
   const { user, loading, needsBootstrap } = useAuth();
+  const location = useLocation();
 
   if (loading) return <div className="loading-block">Memuat...</div>;
   if (needsBootstrap) return <Bootstrap />;
-  if (!user) return <Login />;
+  if (!user) return <Navigate to="/masuk" replace state={{ from: location.pathname }} />;
   if (user.needs_onboarding) return <CompleteProfile />;
   return children;
 }
@@ -46,7 +70,11 @@ function Gate({ children }) {
 function AppRoutes() {
   return (
     <Routes>
-      {/* Halaman publik — bisa diakses tanpa login */}
+      {/* --- Halaman publik --- */}
+      <Route path="/" element={<Beranda />} />
+      <Route path="/masuk" element={<Masuk />} />
+      <Route path="/login" element={<Navigate to="/masuk" replace />} />
+      <Route path="/tentang" element={<Navigate to="/" replace />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
@@ -54,17 +82,15 @@ function AppRoutes() {
       <Route path="/oauth-callback" element={<OAuthCallback />} />
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/data-deletion" element={<DataDeletion />} />
-      {/* Halaman publik untuk mesin pencari — lihat web/src/pages/Landing.jsx */}
-      <Route path="/tentang" element={<Landing />} />
 
-      {/* Semua rute lain butuh sesi (atau nampilin Login/Bootstrap kalau belum) */}
+      {/* --- Dasbor (butuh sesi) --- */}
       <Route
         path="/*"
         element={
           <Gate>
             <Routes>
               <Route element={<Layout />}>
-                <Route path="/" element={<Overview />} />
+                <Route path="/dashboard" element={<Overview />} />
                 <Route path="/monitor" element={<Monitor />} />
                 <Route path="/conversations" element={<Conversations />} />
                 <Route path="/contacts" element={<Contacts />} />
@@ -84,7 +110,7 @@ function AppRoutes() {
                 <Route path="/team" element={<Team />} />
                 <Route path="/audit-log" element={<AuditLog />} />
                 <Route path="/settings" element={<Settings />} />
-                <Route path="*" element={<Navigate to="/" replace />} />
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
               </Route>
             </Routes>
           </Gate>

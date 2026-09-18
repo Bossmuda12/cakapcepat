@@ -3,6 +3,15 @@ import { pool } from "../db/pool";
 export interface GuardrailResult {
   triggered: boolean;
   reason?: string;
+  /**
+   * true  = percakapan DIKUNCI, AI berhenti sampai manusia melepas manual.
+   * false = AI tetap boleh menjawab giliran ini, TAPI dengan larangan keras
+   *         menjanjikan apa pun (lihat chatbot.ts). Dulu kasus ini membuat AI
+   *         diam total — pelanggan yang bertanya "boleh kurang sikit tak?"
+   *         tidak dibalas sama sekali sampai ada admin yang sadar, dan itu
+   *         terbaca seperti di-ghosting.
+   */
+  pauseAi?: boolean;
 }
 
 export interface CheckGuardrailsParams {
@@ -19,11 +28,18 @@ export interface CheckGuardrailsParams {
  * pemilik/CS harus mengambil alih manual (lihat kolom conversations di
  * schema.sql, bagian F-6/F-7).
  *
- * triggered=true SELALU berarti "AI mundur untuk balasan kali ini" (dipakai
- * chatbot.ts untuk berhenti sebelum memanggil Claude) — pause_ai hanya
- * menentukan apakah penguncian itu PERMANEN (sampai manusia melepas manual)
- * atau cuma untuk giliran balasan ini saja (mis. kata kunci "diskon"/"nego"
- * — cukup AI diam sebentar, tidak perlu mengunci seluruh percakapan).
+ * triggered=true berarti "ada hal sensitif di pesan ini". Yang menentukan
+ * tindakannya adalah pause_ai:
+ *   pause_ai = true  -> percakapan DIKUNCI (ai_paused), AI berhenti total
+ *                       sampai manusia melepas manual. Untuk hal berat:
+ *                       tuduhan tipu, sebut peguam/polis, barang rosak.
+ *   pause_ai = false -> percakapan TIDAK dikunci dan AI TETAP membalas, tapi
+ *                       dengan larangan keras menjanjikan apa pun (lihat
+ *                       holdingReason di chatbot.ts). Untuk nego harga:
+ *                       dulu AI diam total di kasus ini dan pelanggan merasa
+ *                       di-ghosting — justru kehilangan calon pembeli.
+ * Kedua-duanya menandai percakapan needs_attention supaya muncul di daftar
+ * "butuh perhatian" pemilik.
  */
 export async function checkGuardrails(params: CheckGuardrailsParams): Promise<GuardrailResult> {
   const { organizationId, conversationId, incomingText } = params;
@@ -45,9 +61,21 @@ export async function checkGuardrails(params: CheckGuardrailsParams): Promise<Gu
        WHERE id = $2`,
       [hit.reason, conversationId]
     );
+  } else {
+    // Tidak dikunci, tapi TETAP ditandai butuh perhatian: permintaan diskon
+    // yang tidak pernah muncul di daftar "butuh perhatian" sama saja dengan
+    // hilang — pemilik tidak akan pernah tahu ada calon pembeli menawar.
+    await pool.query(
+      `UPDATE conversations
+       SET needs_attention = true,
+           attention_reason = COALESCE(attention_reason, $1),
+           attention_at = COALESCE(attention_at, now())
+       WHERE id = $2 AND needs_attention = false`,
+      [hit.reason, conversationId]
+    );
   }
 
-  return { triggered: true, reason: hit.reason };
+  return { triggered: true, reason: hit.reason, pauseAi: hit.pause_ai === true };
 }
 
 export interface DefaultGuardrail {
@@ -64,8 +92,8 @@ export interface DefaultGuardrail {
  * Kata kunci yang menyangkut RISIKO SERIUS (tuduhan tipu, ancaman hukum,
  * barang rosak) mengunci percakapan penuh (pauseAi=true). Kata kunci
  * negosiasi harga (diskon/nego) sengaja TIDAK mengunci penuh (pauseAi=false)
- * — cukup AI diam giliran ini, supaya CS bisa kasih approval sekali tanpa
- * mematikan AI selamanya untuk pelanggan itu.
+ * — AI tetap membalas ramah tanpa menjanjikan angka apa pun, sambil percakapan
+ * ditandai butuh perhatian supaya pemilik bisa memberi keputusan harga.
  */
 export const DEFAULT_GUARDRAILS: DefaultGuardrail[] = [
   { keyword: "refund", reason: "Pelanggan minta refund/pulangkan wang — perlu ditangani manusia.", pauseAi: true },

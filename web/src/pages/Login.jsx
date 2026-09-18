@@ -181,6 +181,9 @@ export default function Login() {
           <div className="auth-links">
             Belum punya akun? <Link to="/register">Daftar di sini</Link>
           </div>
+          <div className="auth-links auth-links-back">
+            <Link to="/">&larr; Kembali ke beranda</Link>
+          </div>
         </div>
       </div>
     </div>

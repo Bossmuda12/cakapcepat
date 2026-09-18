@@ -1,21 +1,37 @@
 User-agent: *
-Allow: /$
-Allow: /tentang
+Allow: /
 Allow: /privacy-policy
 Allow: /data-deletion
 
-# Halaman di bawah ini butuh login — tidak ada gunanya diindeks
+# Halaman di bawah ini butuh login atau tidak berguna di hasil pencarian
 Disallow: /api/
 Disallow: /uploads/
-Disallow: /conversations
-Disallow: /contacts
-Disallow: /orders
-Disallow: /orders-list
-Disallow: /monitor
-Disallow: /settings
-Disallow: /audit-log
+Disallow: /masuk
+Disallow: /login
+Disallow: /register
+Disallow: /forgot-password
 Disallow: /reset-password
 Disallow: /verify-email
 Disallow: /oauth-callback
+Disallow: /dashboard
+Disallow: /conversations
+Disallow: /contacts
+Disallow: /broadcasts
+Disallow: /ctwa
+Disallow: /orders
+Disallow: /orders-list
+Disallow: /leads
+Disallow: /automations
+Disallow: /automation
+Disallow: /followups
+Disallow: /courier
+Disallow: /knowledge-base
+Disallow: /channels
+Disallow: /products
+Disallow: /departments
+Disallow: /team
+Disallow: /monitor
+Disallow: /settings
+Disallow: /audit-log
 
 Sitemap: https://www.cakapcepat.com/sitemap.xml

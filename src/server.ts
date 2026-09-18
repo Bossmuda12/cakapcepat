@@ -53,7 +53,85 @@ import { resumeAllQrSessions } from "./whatsapp/qrSessionManager";
 
 const app = express();
 
-app.use(cors());
+/* --------------------------------------------------------------------------
+   Pengerasan HTTP (keamanan + SEO)
+
+   Sebelumnya server membocorkan `X-Powered-By: Express`, mengizinkan CORS dari
+   SEMUA origin (`cors()` tanpa argumen), tidak mengirim satu pun header
+   keamanan, dan membalas HTML aplikasi dengan status 200 untuk SETIAP path yang
+   tidak dikenal — termasuk /favicon.png dan /apa-saja.xml. Akibatnya Google
+   melihat "soft 404" di mana-mana dan ikon situs tidak pernah muncul.
+   -------------------------------------------------------------------------- */
+app.disable("x-powered-by");
+
+const isProd = process.env.NODE_ENV === "production";
+
+// Origin yang boleh memanggil API ini dari browser. Dashboard disajikan dari
+// server yang sama (same-origin), jadi daftar ini sengaja pendek.
+const allowedOrigins = new Set<string>(
+  [
+    process.env.APP_URL,
+    process.env.MARKETING_ORIGIN,
+    "https://www.cakapcepat.com",
+    "https://cakapcepat.com",
+    "https://cakapcepat.up.railway.app",
+    ...(isProd ? [] : ["http://localhost:5173", "http://localhost:3000"]),
+  ]
+    .filter((v): v is string => Boolean(v))
+    .map((v) => v.replace(/\/+$/, ""))
+);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Tanpa header Origin = bukan permintaan lintas situs dari browser
+      // (curl, webhook Meta, health check) — tidak perlu diblokir di sini.
+      if (!origin) return callback(null, true);
+      return callback(null, allowedOrigins.has(origin.replace(/\/+$/, "")));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization", "Idempotency-Key", "If-Match"],
+  })
+);
+
+// Content-Security-Policy dibuat seketat yang masih bisa dijalankan aplikasi
+// ini: skrip HANYA dari domain sendiri (tanpa 'unsafe-inline'), gaya inline
+// diizinkan karena React menulis atribut style, gambar boleh data:/blob: karena
+// avatar & media pelanggan memakainya.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https:",
+  "media-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "connect-src 'self' ws: wss:",
+  "frame-ancestors 'none'",
+  "base-uri 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+].join("; ");
+
+app.use((req, res, next) => {
+  res.setHeader("Content-Security-Policy", CSP);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader(
+    "Permissions-Policy",
+    "geolocation=(), microphone=(), camera=(), payment=(), usb=(), interest-cohort=()"
+  );
+  if (isProd) {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+  // Data pribadi organisasi tidak boleh nyangkut di cache proxy/browser.
+  if (req.path.startsWith("/api")) {
+    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("X-Robots-Tag", "noindex");
+  }
+  next();
+});
 
 // express.json({ verify }) menyimpan raw body ke req.rawBody, dipakai webhook.ts
 // untuk verifikasi signature (X-Hub-Signature-256) dari Meta.
@@ -108,8 +186,36 @@ app.use("/uploads", express.static(uploadsDir));
 // dari service backend yang sama, supaya nggak perlu deploy terpisah.
 const publicDir = path.join(__dirname, "../public");
 if (fs.existsSync(publicDir)) {
-  app.use(express.static(publicDir));
-  app.get(/^(?!\/api|\/webhook|\/health|\/ws).*/, (_req, res) => {
+  app.use(
+    express.static(publicDir, {
+      // Berkas di /assets/ namanya mengandung hash isi (index-a1b2c3.js) — aman
+      // di-cache setahun. index.html TIDAK boleh di-cache, kalau tidak pengguna
+      // tetap memuat versi lama setelah deploy.
+      setHeaders(res, filePath) {
+        if (/[\\/]assets[\\/]/.test(filePath)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        } else if (filePath.endsWith("index.html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        } else {
+          res.setHeader("Cache-Control", "public, max-age=3600");
+        }
+      },
+    })
+  );
+
+  // Path yang TERLIHAT seperti berkas (punya ekstensi) tapi tidak ada di folder
+  // public harus 404 sungguhan. Sebelumnya semuanya dibalas index.html dengan
+  // status 200, sehingga /favicon.png, /sitemap.xml palsu, dan salah ketik
+  // apa pun terlihat "ada" di mata mesin pencari.
+  app.get(/^(?!\/api|\/webhook|\/health|\/ws|\/uploads).*/, (req, res) => {
+    if (/\.[a-z0-9]{2,5}$/i.test(req.path)) {
+      res.status(404).type("text/plain").send("404 Not Found");
+      return;
+    }
+    // Rute aplikasi (SPA). Halaman privat tidak boleh diindeks Google.
+    const isPublicPage = ["/", "/privacy-policy", "/data-deletion"].includes(req.path);
+    if (!isPublicPage) res.setHeader("X-Robots-Tag", "noindex");
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(path.join(publicDir, "index.html"));
   });
 }

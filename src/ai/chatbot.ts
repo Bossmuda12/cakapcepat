@@ -3,6 +3,7 @@ import { getAiConfig, isBudgetExceeded } from "./usage";
 import { callClaude } from "./anthropic";
 import { getRecentHistory } from "./history";
 import { buildKnowledgeContext } from "./knowledge";
+import { buildCustomerContext } from "./customerContext";
 import { detectProduct } from "./productDetector";
 import { checkGuardrails } from "./guardrails";
 import { splitIntoBubbles, typingDelayMs, recentOpeners, rememberOpener } from "./humanizer";
@@ -76,7 +77,12 @@ export async function generateAiReplyDetailed(params: GenerateReplyParams): Prom
   if (channel && !channel.aiEnabled) return null; // (a) — AI belum dinyalakan utk nomor ini (F-3, default MATI)
 
   const guardrail = await checkGuardrails({ organizationId, conversationId, incomingText }); // (b)
-  if (guardrail.triggered) return null;
+  // Pagar "berat" (tuduhan tipu, sebut peguam, barang rosak) → AI mundur
+  // sepenuhnya dan percakapan dikunci untuk manusia. Pagar "ringan" (minta
+  // diskon/nego) → AI TETAP membalas supaya pelanggan tidak di-ghosting, tapi
+  // dengan larangan keras menjanjikan apa pun; lihat holdingInstruction.
+  if (guardrail.triggered && guardrail.pauseAi) return null;
+  const holdingReason = guardrail.triggered ? guardrail.reason ?? null : null;
 
   const aiConfig = await getAiConfig(organizationId);
   if (!aiConfig.apiKey) {
@@ -98,14 +104,17 @@ export async function generateAiReplyDetailed(params: GenerateReplyParams): Prom
     adSourceUrl: params.adSourceUrl ?? null,
   }); // (c)
 
-  const [knowledge, history, openers] = await Promise.all([
+  const [knowledge, customer, history, openers] = await Promise.all([
     buildKnowledgeContext(organizationId, productId), // (d)
+    buildCustomerContext(organizationId, conversationId), // (d2) fakta pesanan pelanggan ini
     getRecentHistory(conversationId),
     recentOpeners(organizationId, convo.channelId), // (f)
   ]);
 
   const system = buildSystemPrompt({
     knowledge,
+    customer,
+    holdingReason,
     orgSystemPrompt: aiConfig.systemPrompt,
     personaName: channel?.personaName ?? null,
     personaPrompt: channel?.personaPrompt ?? null,
@@ -180,12 +189,14 @@ async function loadChannelPersona(channelId: string): Promise<ChannelPersona | n
 
 function buildSystemPrompt(args: {
   knowledge: string;
+  customer: string;
+  holdingReason: string | null;
   orgSystemPrompt: string | null;
   personaName: string | null;
   personaPrompt: string | null;
   recentOpeners: string[];
 }): string {
-  const { knowledge, orgSystemPrompt, personaName, personaPrompt, recentOpeners } = args;
+  const { knowledge, customer, holdingReason, orgSystemPrompt, personaName, personaPrompt, recentOpeners } = args;
 
   const lines: string[] = [];
 
@@ -232,6 +243,22 @@ function buildSystemPrompt(args: {
     "=== Knowledge Base (satu-satunya sumber fakta produk yang boleh kamu pakai) ===",
     knowledge
   );
+
+  if (customer.trim()) {
+    lines.push("", customer.trim());
+  }
+
+  if (holdingReason) {
+    lines.push(
+      "",
+      "SITUASI KHUSUS PESAN INI: " + holdingReason,
+      "Untuk balasan ini kamu WAJIB:",
+      "- Tetap membalas dengan ramah supaya pelanggan tidak merasa diabaikan.",
+      "- TIDAK menyebut angka diskon, potongan, harga khusus, atau janji apa pun.",
+      "- Katakan dengan bahasa sendiri (jangan template) bahwa kamu akan cek dulu ke tim/pemilik dan kabari lagi.",
+      "- Kalau relevan, tetap jawab pertanyaan lain pelanggan yang faktanya ada di Knowledge Base."
+    );
+  }
 
   return lines.join("\n");
 }

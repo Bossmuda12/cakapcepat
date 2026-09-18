@@ -98,11 +98,26 @@ conversationsRouter.get("/conversations", requireAuth, async (req: AuthedRequest
             conv.ai_paused, conv.ai_summary, conv.ai_summary_at, conv.order_status,
             c.wa_number, c.name AS contact_name, c.pipeline_stage,
             u.name AS assigned_name,
-            wc.owner_user_id AS channel_owner_id, wc.label AS channel_label
+            wc.owner_user_id AS channel_owner_id, wc.label AS channel_label,
+            p.name AS product_name,
+            lm.body AS last_message_body, lm.direction AS last_message_direction,
+            lm.media_type AS last_message_media_type, lm.sender_type AS last_message_sender_type
      FROM conversations conv
      JOIN contacts c ON c.id = conv.contact_id
      JOIN whatsapp_channels wc ON wc.id = conv.channel_id
      LEFT JOIN users u ON u.id = conv.assigned_to
+     LEFT JOIN products p ON p.id = conv.product_id
+     /* Cuplikan pesan terakhir untuk daftar inbox — tanpa ini daftar percakapan
+        tidak memberi tahu apa pun tentang isi obrolan, dan admin harus membuka
+        satu per satu hanya untuk tahu mana yang perlu dibalas. LATERAL + LIMIT 1
+        memakai idx_messages_conversation, tidak memuat seluruh riwayat. */
+     LEFT JOIN LATERAL (
+       SELECT m.content->>'body' AS body, m.direction, m.media_type, m.sender_type
+       FROM messages m
+       WHERE m.conversation_id = conv.id
+       ORDER BY m.created_at DESC
+       LIMIT 1
+     ) lm ON true
      WHERE ${whereSql}
      ORDER BY conv.last_message_at DESC NULLS LAST
      LIMIT $${listParams.length - 1} OFFSET $${listParams.length}`,

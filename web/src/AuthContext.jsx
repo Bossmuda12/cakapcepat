@@ -7,12 +7,21 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [needsBootstrap, setNeedsBootstrap] = useState(false);
+  /* Kalau server tidak bisa dihubungi, aplikasi TIDAK boleh menggantung di
+     layar "Memuat..." selamanya — halaman profil publik harus tetap tampil. */
+  const [serverUnreachable, setServerUnreachable] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const status = await api.get("/auth/status");
-      setNeedsBootstrap(status.needsBootstrap);
+      try {
+        const status = await api.get("/auth/status");
+        setNeedsBootstrap(Boolean(status?.needsBootstrap));
+        setServerUnreachable(false);
+      } catch {
+        setNeedsBootstrap(false);
+        setServerUnreachable(true);
+      }
 
       if (getToken()) {
         try {
@@ -54,7 +63,7 @@ export function AuthProvider({ children }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, loading, needsBootstrap, login, bootstrap, logout, refresh, setUser }}
+      value={{ user, loading, needsBootstrap, serverUnreachable, login, bootstrap, logout, refresh, setUser }}
     >
       {children}
     </AuthContext.Provider>

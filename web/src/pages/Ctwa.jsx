@@ -21,7 +21,10 @@ export default function Ctwa() {
       ]);
       setSettings(s);
       setForm((f) => ({ ...f, pixelId: s.capi.pixelId || "" }));
-      setConversations(convos);
+      /* Endpoint /conversations sekarang mengembalikan {items,total,limit,offset}
+         (pagination). Dulu halaman ini mengharapkan array biasa, sehingga
+         conversations.map meledak dan seluruh halaman CTWA blank. */
+      setConversations(Array.isArray(convos) ? convos : convos?.items ?? []);
     } catch (err) {
       setError(err.message);
     }

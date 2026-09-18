@@ -18,11 +18,11 @@ export default function OAuthCallback() {
   useEffect(() => {
     const token = searchParams.get("token");
     if (!token) {
-      navigate("/?oauthError=" + encodeURIComponent("Token login tidak ditemukan."));
+      navigate("/masuk?oauthError=" + encodeURIComponent("Token login tidak ditemukan."));
       return;
     }
     setToken(token);
-    refresh().then(() => navigate("/", { replace: true }));
+    refresh().then(() => navigate("/dashboard", { replace: true }));
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

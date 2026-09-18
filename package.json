@@ -10,7 +10,8 @@
     "start": "node dist/db/migrate.js && node dist/server.js",
     "db:migrate": "tsx src/db/migrate.ts",
     "worker": "tsx watch src/queue/broadcastWorker.ts",
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:ai": "tsx scripts/uji-otak-ai.ts"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.24",

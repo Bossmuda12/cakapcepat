@@ -69,7 +69,7 @@ export default function VerifyEmail() {
               <h1 style={{ textAlign: "center" }}>Email terverifikasi</h1>
               <p className="subtitle" style={{ textAlign: "center" }}>{message}</p>
               <div className="auth-links">
-                <Link to="/">Masuk sekarang</Link>
+                <Link to="/masuk">Masuk sekarang</Link>
               </div>
             </>
           )}
@@ -85,7 +85,7 @@ export default function VerifyEmail() {
               <h1 style={{ textAlign: "center" }}>Verifikasi gagal</h1>
               <p className="subtitle" style={{ textAlign: "center" }}>{message}</p>
               <div className="auth-links">
-                <Link to="/">Coba masuk untuk kirim ulang link verifikasi</Link>
+                <Link to="/masuk">Coba masuk untuk kirim ulang link verifikasi</Link>
               </div>
             </>
           )}

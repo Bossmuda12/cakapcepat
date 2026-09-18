@@ -91,7 +91,7 @@ export default function Register() {
               <h1 style={{ textAlign: "center" }}>Cek email kamu</h1>
               <p className="subtitle" style={{ textAlign: "center" }}>{done.message}</p>
               <div className="auth-links">
-                <Link to="/">Kembali ke halaman masuk</Link>
+                <Link to="/masuk">Kembali ke halaman masuk</Link>
               </div>
             </>
           ) : (
@@ -143,7 +143,7 @@ export default function Register() {
                 </button>
               </form>
               <div className="auth-links">
-                Sudah punya akun? <Link to="/">Masuk di sini</Link>
+                Sudah punya akun? <Link to="/masuk">Masuk di sini</Link>
               </div>
             </>
           )}
