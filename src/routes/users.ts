@@ -32,6 +32,17 @@ usersRouter.post("/users", requireAuth, async (req: AuthedRequest, res) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const { name, email, password, role } = parsed.data;
 
+  // Hanya OWNER yang boleh mencetak owner baru.
+  //
+  // Sebelumnya seorang admin bisa membuat akun ber-peran owner, lalu masuk
+  // memakai password yang dia tentukan sendiri — naik pangkat jadi owner tanpa
+  // sepengetahuan owner yang asli. Pembatas satu-satunya dulu cuma "jangan
+  // sampai owner terakhir terhapus", dan itu menjaga ketersediaan, bukan hak
+  // akses.
+  if (role === "owner" && req.auth!.role !== "owner") {
+    return res.status(403).json({ error: "Hanya owner yang bisa menambah anggota dengan peran owner" });
+  }
+
   const passwordHash = await bcrypt.hash(password, 10);
   // Ditambahkan langsung oleh owner/admin yang sudah login — jadi otomatis
   // email_verified (nggak perlu alur verifikasi email seperti Register mandiri).
@@ -66,6 +77,26 @@ usersRouter.patch("/users/:id", requireAuth, async (req: AuthedRequest, res) => 
     [req.params.id, req.auth!.organizationId]
   );
   if (!existingRows[0]) return res.status(404).json({ error: "Anggota tim tidak ditemukan" });
+
+  // Hanya OWNER yang boleh menaikkan orang jadi owner, atau menurunkan owner
+  // yang sudah ada. Tanpa ini seorang admin bisa menaikkan dirinya sendiri
+  // (lewat akun kedua) atau menurunkan owner asli, dan owner kehilangan kendali
+  // atas organisasinya sendiri.
+  if (req.auth!.role !== "owner") {
+    if (role === "owner") {
+      return res.status(403).json({ error: "Hanya owner yang bisa menaikkan anggota jadi owner" });
+    }
+    if (existingRows[0].role === "owner") {
+      return res.status(403).json({ error: "Hanya owner yang bisa mengubah akun ber-peran owner" });
+    }
+  }
+
+  // Tidak bisa mengubah PERAN SENDIRI — termasuk owner. Perubahan peran harus
+  // selalu datang dari orang lain, supaya tidak ada jalur naik pangkat yang
+  // dimulai dan diakhiri oleh orang yang sama.
+  if (req.params.id === req.auth!.userId && role !== undefined && role !== req.auth!.role) {
+    return res.status(400).json({ error: "Tidak bisa mengubah peran akun sendiri" });
+  }
 
   // Cegah owner terakhir "diturunkan" dari peran owner secara tidak sengaja
   // (kalau ini owner satu-satunya) — supaya organization tidak kehilangan owner sama sekali.
@@ -138,6 +169,12 @@ usersRouter.delete("/users/:id", requireAuth, async (req: AuthedRequest, res) =>
     [req.params.id, req.auth!.organizationId]
   );
   if (!existingRows[0]) return res.status(404).json({ error: "Anggota tim tidak ditemukan" });
+
+  // Admin tidak boleh menghapus owner — kalau boleh, admin bisa menyingkirkan
+  // owner asli lalu tinggal sendiri di organisasi itu.
+  if (existingRows[0].role === "owner" && req.auth!.role !== "owner") {
+    return res.status(403).json({ error: "Hanya owner yang bisa menghapus akun ber-peran owner" });
+  }
 
   if (existingRows[0].role === "owner") {
     const { rows: ownerCountRows } = await pool.query(
