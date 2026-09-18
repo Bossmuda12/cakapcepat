@@ -27,6 +27,20 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
+/**
+ * Apakah panel ini sudah punya staf sama sekali?
+ *
+ * Hanya mengembalikan satu boolean — tidak ada email, tidak ada nama, tidak
+ * ada jumlah. Tanpa ini, pemilik yang baru pertama membuka panelnya cuma
+ * melihat "Email atau password salah" dan mengira ada yang rusak, padahal
+ * akunnya memang belum pernah dibuat. Pesan gagal login sengaja tetap
+ * seragam (lihat di bawah), jadi keterangan ini yang menjembatani.
+ */
+platformRouter.get("/platform/status", async (_req, res) => {
+  const { rows } = await pool.query("SELECT count(*)::int AS n FROM platform_admins");
+  res.json({ needsBootstrap: rows[0].n === 0 });
+});
+
 platformRouter.post("/platform/login", async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: "Email atau password tidak valid" });

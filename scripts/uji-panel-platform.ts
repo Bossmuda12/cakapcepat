@@ -97,6 +97,20 @@ async function buatStaf(email: string, password: string, role: string): Promise<
   await buatStaf(emailOwner, pwOwner, "platform_owner");
   await buatStaf(emailAuditor, pwOwner, "readonly_auditor");
 
+  console.log("\n== 0. Keterangan 'panel belum punya staf' ==");
+  const statusAda = await req("GET", "/platform/status");
+  ok("status bisa dibaca tanpa login", statusAda.status === 200);
+  ok(
+    "menyatakan sudah ada staf (di sini memang sudah dibuat)",
+    statusAda.body?.needsBootstrap === false,
+    JSON.stringify(statusAda.body)
+  );
+  ok(
+    "TIDAK membocorkan email atau jumlah staf",
+    Object.keys(statusAda.body ?? {}).length === 1,
+    JSON.stringify(statusAda.body)
+  );
+
   console.log("\n== 1. Masuk panel ==");
   const salah = await req("POST", "/platform/login", {
     body: { email: emailOwner, password: "password-salah" },

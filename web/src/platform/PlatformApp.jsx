@@ -21,6 +21,15 @@ function PlatformLogin({ onMasuk }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  /* null = belum tahu; true = panel ini belum punya staf sama sekali. */
+  const [belumAdaStaf, setBelumAdaStaf] = useState(null);
+
+  useEffect(() => {
+    platformApi
+      .get("/status")
+      .then((s) => setBelumAdaStaf(Boolean(s?.needsBootstrap)))
+      .catch(() => setBelumAdaStaf(null));
+  }, []);
 
   const submit = async (e) => {
     e.preventDefault();
@@ -49,6 +58,28 @@ function PlatformLogin({ onMasuk }) {
           Panel pengelolaan platform CakapCepat. Akun di sini terpisah dari akun penjual — sesi
           dasbor biasa tidak berlaku di halaman ini.
         </p>
+
+        {/* Tanpa keterangan ini, pemilik yang baru pertama membuka panelnya cuma
+            melihat "Email atau password salah" dan mengira ada yang rusak —
+            padahal akun stafnya memang belum pernah dibuat. */}
+        {belumAdaStaf === true && (
+          <div className="plat-setup-note">
+            <strong>Panel ini belum punya akun staf.</strong>
+            <p>
+              Akun pertama sengaja tidak bisa dibuat dari halaman ini — kalau bisa, siapa pun yang
+              menemukan alamat ini lebih dulu jadi pemilik platform.
+            </p>
+            <p>Di pengaturan hosting (Railway &rarr; Variables), tambahkan dua variabel sekaligus:</p>
+            <pre>
+              PLATFORM_BOOTSTRAP_EMAIL{"\n"}PLATFORM_BOOTSTRAP_PASSWORD
+            </pre>
+            <p>
+              Isi dengan email dan password pilihanmu (minimal 12 karakter). Tunggu deploy selesai,
+              masuk di sini, lalu <b>hapus lagi kedua variabel itu</b>.
+            </p>
+          </div>
+        )}
+
         {error && <div className="error-box">{error}</div>}
         <div className="field">
           <label htmlFor="plat-email">Email staf platform</label>
@@ -75,8 +106,9 @@ function PlatformLogin({ onMasuk }) {
           {busy ? "Memeriksa..." : "Masuk"}
         </button>
         <p className="plat-login-note">
-          Akun staf platform hanya dibuat lewat baris perintah di server
-          (<code>npm run platform:admin</code>) — tidak ada pendaftaran mandiri di sini.
+          Tidak ada pendaftaran mandiri di sini. Akun staf dibuat lewat pengaturan hosting
+          (<code>PLATFORM_BOOTSTRAP_*</code>) atau, kalau punya akses shell ke server,
+          <code>npm run platform:admin</code>.
         </p>
       </form>
     </div>
