@@ -1749,13 +1749,17 @@ tr:last-child td { border-bottom: none; }
   letter-spacing: -0.01em;
   margin-right: auto;
 }
-/* Logo aslinya gelap — di atas latar tinta nyaris tak terlihat, jadi diberi alas terang. */
+/* Logo dipasang LANGSUNG di atas latar tinta, tanpa alas putih.
+   Alas putih itu masuk akal waktu logonya masih bertulisan biru tua. Begitu
+   halaman ini beralih ke logo-light.png yang tulisannya PUTIH, alas itu
+   justru menelan tulisannya — yang tersisa cuma ikon birunya di dalam kotak
+   putih yang menabrak seluruh desain gelap di sekitarnya. */
 .landing-brand img {
   width: auto;
-  height: 46px;
-  border-radius: 12px;
-  background: #fff;
-  padding: 8px 14px;
+  height: 42px;
+  background: none;
+  padding: 0;
+  border-radius: 0;
 }
 .landing-nav-links { display: flex; gap: 24px; }
 .landing-nav-links a {
@@ -1765,14 +1769,21 @@ tr:last-child td { border-bottom: none; }
   transition: color 160ms ease;
 }
 .landing-nav-links a:hover { color: #7dd3fc; }
+/* Tombol ajakan utama.
+   Versi lama memakai teks biru-tua (#06121c) di atas gradien nada sedang.
+   Di halaman segelap ini hasilnya terbaca samar — tulisannya menyatu dengan
+   latar tombolnya sendiri. Sekarang gradiennya dipekatkan dan teksnya putih:
+   kontras 5,4:1 di ujung kiri dan 7,1:1 di ujung kanan, lolos WCAG AA di
+   seluruh permukaan tombol, bukan cuma di tengah. */
 .landing-nav-cta {
   text-decoration: none;
   font-size: 14.5px;
-  font-weight: 600;
-  color: #06121c;
-  background: linear-gradient(120deg, var(--accent-cyan-solid, #0891b2), var(--accent-violet-solid, #6366f1));
-  padding: 9px 18px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(120deg, #0e7490, #6d28d9);
+  padding: 10px 20px;
   border-radius: 999px;
+  box-shadow: 0 6px 18px -6px rgba(109, 40, 217, 0.7);
   transition: filter 180ms ease, transform 180ms ease;
   white-space: nowrap;
 }
@@ -1812,8 +1823,10 @@ tr:last-child td { border-bottom: none; }
   transition: filter 180ms ease, transform 180ms ease, border-color 180ms ease;
 }
 .landing-btn-primary {
-  color: #06121c;
-  background: linear-gradient(120deg, var(--accent-cyan-solid, #0891b2), var(--accent-violet-solid, #6366f1));
+  color: #fff;
+  font-weight: 700;
+  background: linear-gradient(120deg, #0e7490, #6d28d9);
+  box-shadow: 0 10px 26px -10px rgba(109, 40, 217, 0.75);
 }
 .landing-btn-primary:hover { filter: brightness(1.12); transform: translateY(-1px); }
 .landing-btn-ghost {
