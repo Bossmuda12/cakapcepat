@@ -94,6 +94,69 @@ platformRouter.get("/platform/me", requirePlatformAuth, async (req: PlatformRequ
 });
 
 // ============================================================================
+// GANTI PASSWORD SENDIRI
+//
+// Wajib ada, dan bukan sekadar kenyamanan. Password staf pertama dibuat lewat
+// environment variable di dashboard hosting — artinya nilainya sempat
+// tersimpan sebagai teks biasa di sana, dan mungkin juga tercatat di tempat
+// lain saat dituliskan. Tanpa cara mengganti dari dalam panel, satu-satunya
+// jalan memutar password adalah mengisi ulang env itu lagi, yang justru
+// mengulang masalahnya.
+//
+// Tersedia untuk SEMUA peran: hak mengelola staf lain tidak ada hubungannya
+// dengan hak mengganti password sendiri.
+// ============================================================================
+const gantiPasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(12, "Password baru minimal 12 karakter"),
+});
+
+platformRouter.post("/platform/me/password", requirePlatformAuth, async (req: PlatformRequest, res) => {
+  const parsed = gantiPasswordSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+  const { currentPassword, newPassword } = parsed.data;
+
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ error: "Password baru harus berbeda dari yang sekarang" });
+  }
+
+  const { rows } = await pool.query("SELECT password_hash FROM platform_admins WHERE id = $1", [
+    req.platform!.platformAdminId,
+  ]);
+  if (!rows[0]) return res.status(404).json({ error: "Akun tidak ditemukan" });
+
+  // Password lama tetap diminta walaupun sesinya sudah terbukti sah. Kalau
+  // tidak, sesi yang tertinggal terbuka di perangkat orang lain cukup untuk
+  // mengunci pemilik aslinya keluar dari panelnya sendiri.
+  const cocok = await bcrypt.compare(currentPassword, rows[0].password_hash);
+  if (!cocok) {
+    await writePlatformAudit({
+      req,
+      action: "auth.password_change_failed",
+      targetType: "platform_admin",
+      targetId: req.platform!.platformAdminId,
+    });
+    return res.status(401).json({ error: "Password sekarang salah" });
+  }
+
+  const hash = await bcrypt.hash(newPassword, 10);
+  await pool.query("UPDATE platform_admins SET password_hash = $1 WHERE id = $2", [
+    hash,
+    req.platform!.platformAdminId,
+  ]);
+
+  await writePlatformAudit({
+    req,
+    action: "auth.password_changed",
+    targetType: "platform_admin",
+    targetId: req.platform!.platformAdminId,
+  });
+
+  // Password barunya TIDAK dicatat di audit, dan tidak pernah dikembalikan.
+  res.json({ ok: true, message: "Password panel berhasil diganti." });
+});
+
+// ============================================================================
 // RINGKASAN — semua angkanya dari database, tidak ada yang dikarang.
 // ============================================================================
 platformRouter.get(

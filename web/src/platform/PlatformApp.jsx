@@ -8,12 +8,15 @@ import PlatformTenants from "./PlatformTenants";
 import PlatformTenantDetail from "./PlatformTenantDetail";
 import PlatformAudit from "./PlatformAudit";
 import PlatformAdmins from "./PlatformAdmins";
+import PlatformAkun from "./PlatformAkun";
 
 const NAV = [
   { to: "/superadmin", end: true, label: "Ringkasan", icon: "muat", perm: "platform.dashboard.read" },
   { to: "/superadmin/tenants", label: "Penjual", icon: "pengguna", perm: "platform.tenants.read" },
   { to: "/superadmin/audit", label: "Catatan Audit", icon: "salin", perm: "platform.audit.read" },
   { to: "/superadmin/admins", label: "Staf Platform", icon: "gir", perm: "platform.admins.manage" },
+  // Tanpa perm: semua peran harus bisa mengganti password sendiri.
+  { to: "/superadmin/akun", label: "Akun Saya", icon: "pengguna" },
 ];
 
 function PlatformLogin({ onMasuk }) {
@@ -158,7 +161,7 @@ export default function PlatformApp() {
           <span className="plat-side-tag">Control Plane</span>
         </div>
         <nav className="plat-nav">
-          {NAV.filter((n) => izin.has(n.perm)).map((n) => (
+          {NAV.filter((n) => !n.perm || izin.has(n.perm)).map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end} className={({ isActive }) => (isActive ? "active" : "")}>
               <Icon name={n.icon} size={16} />
               <span>{n.label}</span>
@@ -190,6 +193,7 @@ export default function PlatformApp() {
           <Route path="tenants/:id" element={<PlatformTenantDetail izin={izin} />} />
           <Route path="audit" element={<PlatformAudit />} />
           <Route path="admins" element={<PlatformAdmins me={admin} />} />
+          <Route path="akun" element={<PlatformAkun me={admin} />} />
           <Route path="*" element={<Navigate to="/superadmin" replace />} />
         </Routes>
       </main>

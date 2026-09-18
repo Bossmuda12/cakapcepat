@@ -230,6 +230,50 @@ async function buatStaf(email: string, password: string, role: string): Promise<
   );
   ok("pengguna organisasi tetap utuh", masihAda[0].n === 1);
 
+  console.log("\n== 8b. Ganti password panel sendiri ==");
+  const pwBaru = `password-baru-${RUN}`;
+
+  const salahLama = await req("POST", "/platform/me/password", {
+    token: tokenOwner,
+    body: { currentPassword: "bukan-password-saya", newPassword: pwBaru },
+  });
+  ok("password sekarang yang salah ditolak", salahLama.status === 401, String(salahLama.status));
+
+  const terlaluPendek = await req("POST", "/platform/me/password", {
+    token: tokenOwner,
+    body: { currentPassword: pwOwner, newPassword: "pendek" },
+  });
+  ok("password baru < 12 karakter ditolak", terlaluPendek.status === 400);
+
+  const samaSaja = await req("POST", "/platform/me/password", {
+    token: tokenOwner,
+    body: { currentPassword: pwOwner, newPassword: pwOwner },
+  });
+  ok("password baru yang sama persis ditolak", samaSaja.status === 400);
+
+  const ganti = await req("POST", "/platform/me/password", {
+    token: tokenOwner,
+    body: { currentPassword: pwOwner, newPassword: pwBaru },
+  });
+  ok("password berhasil diganti", ganti.status === 200, JSON.stringify(ganti.body));
+
+  const pakaiLama = await req("POST", "/platform/login", {
+    body: { email: emailOwner, password: pwOwner },
+  });
+  ok("password LAMA tidak berlaku lagi", pakaiLama.status === 401, String(pakaiLama.status));
+
+  const pakaiBaru = await req("POST", "/platform/login", {
+    body: { email: emailOwner, password: pwBaru },
+  });
+  ok("password BARU berhasil dipakai", pakaiBaru.status === 200, String(pakaiBaru.status));
+
+  // Auditor (peran paling terbatas) juga harus bisa ganti password sendiri.
+  const auditorGanti = await req("POST", "/platform/me/password", {
+    token: tokenAuditor,
+    body: { currentPassword: pwOwner, newPassword: `auditor-baru-${RUN}` },
+  });
+  ok("peran readonly pun boleh ganti password sendiri", auditorGanti.status === 200, String(auditorGanti.status));
+
   console.log("\n== 9. Semuanya tercatat di audit ==");
   const audit = await req("GET", "/platform/audit?limit=50", { token: tokenOwner });
   const aksi = (audit.body?.items ?? []).map((a: any) => a.action);
@@ -237,6 +281,10 @@ async function buatStaf(email: string, password: string, role: string): Promise<
   ok("login tercatat", aksi.includes("auth.login"));
   ok("penangguhan tercatat", aksi.includes("tenant.suspend"));
   ok("pemulihan tercatat", aksi.includes("tenant.reactivate"));
+
+  ok("penggantian password tercatat", aksi.includes("auth.password_changed"));
+  const auditTeks = JSON.stringify(audit.body);
+  ok("password TIDAK ikut tersimpan di audit", !auditTeks.includes(pwBaru) && !auditTeks.includes(pwOwner));
 
   const barisSuspend = (audit.body?.items ?? []).find((a: any) => a.action === "tenant.suspend");
   ok("alasan ikut tersimpan", String(barisSuspend?.reason_text ?? "").includes("uji otomatis"));
