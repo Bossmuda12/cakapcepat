@@ -4,6 +4,7 @@ import { config } from "./config";
 import { initRealtime } from "./realtime";
 import { initScheduler } from "./scheduler";
 import { resumeAllQrSessions } from "./whatsapp/qrSessionManager";
+import { bootstrapPlatformAdmin } from "./platform/bootstrap";
 
 const server = http.createServer(app);
 initRealtime(server);
@@ -19,3 +20,9 @@ server.listen(config.port, () => {
 // yang sesinya belum di-logout — best-effort, tidak memblokir startup server
 // kalau gagal (mis. kredensial WA sudah kedaluwarsa dari sisi HP).
 resumeAllQrSessions().catch((err) => console.error("[server] Gagal resume sesi QR saat startup:", err));
+
+// Staf platform pertama dari env (lihat src/platform/bootstrap.ts). Tidak
+// memblokir startup: kalau gagal, server penjual tetap harus jalan.
+bootstrapPlatformAdmin().catch((err) =>
+  console.error("[server] Gagal membuat staf platform pertama:", err)
+);
