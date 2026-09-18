@@ -1,10 +1,15 @@
-import { Router } from "express";
+import { Router, raw } from "express";
+import path from "node:path";
+import { promises as fsp } from "node:fs";
 import { z } from "zod";
 import { pool } from "../db/pool";
 import { requireAuth, requireOwnerOrAdmin, type AuthedRequest } from "../middleware/auth";
 import { reportConversionToMeta } from "../whatsapp/capi";
-import { sendTextMessage } from "../whatsapp/client";
-import { sendViaQrSession } from "../whatsapp/qrSessionManager";
+import { sendTextMessage, sendImage, sendVideo, sendAudio, sendDocument } from "../whatsapp/client";
+import { sendViaQrSession, sendMediaViaQrSession } from "../whatsapp/qrSessionManager";
+import { saveIncomingMedia, resolveDiskPath } from "../whatsapp/media";
+import { checkOutboundMedia } from "../whatsapp/outboundMedia";
+import { config } from "../config";
 import { broadcastToOrg } from "../realtime";
 
 export const conversationsRouter = Router();
@@ -224,6 +229,124 @@ const sendMessageSchema = z.object({ body: z.string().min(1) });
 // nomornya sudah beneran terhubung ke Meta (phone_number_id + access_token
 // valid). Untuk channel QR/pairing, dikirim lewat sesi WA aktif (Baileys) —
 // gagal kalau sesinya sedang tidak tersambung.
+/**
+ * Kirim LAMPIRAN (foto, video, voice note, dokumen) ke pelanggan — bagian yang
+ * selama ini hilang dibanding WhatsApp Business asli: CS hanya bisa mengetik
+ * teks, tidak bisa mengirim foto produk, bukti resi, atau invoice PDF.
+ *
+ * Berkas dikirim sebagai body mentah (application/octet-stream) dengan nama &
+ * jenisnya di query string, supaya tidak perlu menambah pustaka multipart.
+ * Isi berkas DIPERIKSA (daftar putih jenis, batas ukuran, magic bytes) di
+ * outboundMedia.ts sebelum disimpan maupun dikirim.
+ */
+const attachmentQuerySchema = z.object({
+  filename: z.string().trim().min(1).max(200).optional(),
+  mime: z.string().trim().min(3).max(120),
+  caption: z.string().trim().max(1000).optional(),
+});
+
+conversationsRouter.post(
+  "/conversations/:id/attachments",
+  requireAuth,
+  raw({ type: () => true, limit: "20mb" }),
+  async (req: AuthedRequest, res) => {
+    const parsedQuery = attachmentQuerySchema.safeParse(req.query);
+    if (!parsedQuery.success) return res.status(400).json({ error: parsedQuery.error.flatten() });
+    const { mime, caption } = parsedQuery.data;
+
+    const buffer = Buffer.isBuffer(req.body) ? (req.body as Buffer) : null;
+    if (!buffer || buffer.length === 0) return res.status(400).json({ error: "Berkas tidak terkirim." });
+
+    const check = checkOutboundMedia(buffer, mime);
+    if (!check.ok) return res.status(422).json({ error: check.error });
+    const kind = check.kind!;
+
+    const { rows } = await pool.query(
+      `SELECT conv.id, conv.channel_id, c.wa_number, c.organization_id,
+              wc.phone_number_id, wc.access_token, wc.connection_type
+       FROM conversations conv
+       JOIN contacts c ON c.id = conv.contact_id
+       JOIN whatsapp_channels wc ON wc.id = conv.channel_id
+       WHERE conv.id = $1 AND c.organization_id = $2`,
+      [req.params.id, req.auth!.organizationId]
+    );
+    const convo = rows[0];
+    if (!convo) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+
+    const saved = await saveIncomingMedia({
+      organizationId: req.auth!.organizationId,
+      buffer,
+      mime,
+      kind,
+    });
+    if (!saved) return res.status(500).json({ error: "Gagal menyimpan berkas di server." });
+
+    try {
+      let waMessageId: string | null = null;
+
+      if (convo.connection_type === "qr_session") {
+        await sendMediaViaQrSession(convo.channel_id, convo.wa_number, resolveDiskPath(saved.url), caption);
+      } else {
+        // Cloud API mengambil berkasnya sendiri dari URL, jadi URL-nya WAJIB
+        // publik & https. Kalau APP_URL belum diisi dengan domain publik,
+        // kirimannya pasti gagal — lebih baik bilang jujur sekarang.
+        const base = (config.appUrl || "").replace(/\/+$/, "");
+        if (!/^https:\/\//i.test(base)) {
+          return res.status(422).json({
+            error:
+              "Nomor ini memakai WhatsApp Cloud API, dan Meta harus bisa mengunduh berkasnya dari internet. " +
+              "Isi dulu APP_URL dengan domain publik https situs ini di pengaturan server.",
+          });
+        }
+        const publicUrl = `${base}${saved.url}`;
+        const filename = path.basename(saved.url);
+        const common = {
+          phoneNumberId: convo.phone_number_id,
+          accessToken: convo.access_token,
+          to: convo.wa_number,
+        };
+        const waRes =
+          kind === "image"
+            ? await sendImage({ ...common, imageUrl: publicUrl, caption })
+            : kind === "video"
+              ? await sendVideo({ ...common, videoUrl: publicUrl, caption })
+              : kind === "audio"
+                ? await sendAudio({ ...common, audioUrl: publicUrl })
+                : await sendDocument({ ...common, documentUrl: publicUrl, caption, filename });
+        waMessageId = waRes?.messages?.[0]?.id ?? null;
+      }
+
+      const { rows: msgRows } = await pool.query(
+        `INSERT INTO messages (conversation_id, direction, sender_type, sender_user_id, wa_message_id,
+                               content_type, content, status, media_type, media_mime, media_url, media_size)
+         VALUES ($1, 'outbound', 'human', $2, $3, $4, $5, 'sent', $6, $7, $8, $9)
+         RETURNING id, direction, sender_type, content_type, content, status, created_at,
+                   media_type, media_mime, media_url, media_size`,
+        [
+          req.params.id,
+          req.auth!.userId,
+          waMessageId,
+          kind,
+          JSON.stringify({ body: caption ?? "" }),
+          kind,
+          mime,
+          saved.url,
+          saved.size,
+        ]
+      );
+      await pool.query("UPDATE conversations SET last_message_at = now() WHERE id = $1", [req.params.id]);
+      broadcastToOrg(req.auth!.organizationId, { type: "message", conversationId: req.params.id });
+      res.status(201).json(msgRows[0]);
+    } catch (err) {
+      // Kiriman gagal -> berkasnya tidak berguna lagi. Tanpa ini setiap
+      // percobaan yang gagal meninggalkan sampah di disk server.
+      await fsp.unlink(resolveDiskPath(saved.url)).catch(() => {});
+      const message = err instanceof Error ? err.message : "Gagal mengirim lampiran";
+      res.status(502).json({ error: message });
+    }
+  }
+);
+
 conversationsRouter.post("/conversations/:id/messages", requireAuth, async (req: AuthedRequest, res) => {
   const parsed = sendMessageSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });

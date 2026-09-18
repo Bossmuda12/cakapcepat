@@ -3,6 +3,7 @@ import { api } from "../api";
 import { useRealtime } from "../useRealtime";
 import Modal from "../components/Modal";
 import DateRangeFilter from "../components/DateRangeFilter";
+import EmojiPicker from "../components/EmojiPicker";
 import { defaultRange } from "../dateRangePresets";
 
 const PAGE_SIZE = 50;
@@ -36,6 +37,12 @@ function previewOf(row) {
     return jenis[row.last_message_media_type] || "Dokumen";
   }
   return "Belum ada pesan";
+}
+
+function formatBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
 function shortTime(ts) {
@@ -78,6 +85,9 @@ export default function Conversations() {
   const [products, setProducts] = useState([]);
   const [productFilter, setProductFilter] = useState(""); // "" = semua produk
   const [detailOpen, setDetailOpen] = useState(true); // panel kanan (detail pelanggan)
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [attachment, setAttachment] = useState(null); // { file, previewUrl }
+  const [uploading, setUploading] = useState(false);
 
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [deletingConversation, setDeletingConversation] = useState(false);
@@ -88,6 +98,8 @@ export default function Conversations() {
   const [deleteMsgError, setDeleteMsgError] = useState("");
 
   const scrollRef = useRef(null);
+  const fileRef = useRef(null);
+  const draftRef = useRef(null);
   const convReqIdRef = useRef(0);
   const msgReqIdRef = useRef(0);
 
@@ -182,11 +194,51 @@ export default function Conversations() {
 
   const selected = rows?.find((r) => r.id === selectedId);
 
+  const clearAttachment = () => {
+    setAttachment((a) => {
+      if (a?.previewUrl) URL.revokeObjectURL(a.previewUrl);
+      return null;
+    });
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const onPickFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSendError("");
+    const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
+    setAttachment({ file, previewUrl });
+  };
+
   const onSend = async (e) => {
     e.preventDefault();
-    if (!draft.trim() || !selectedId) return;
-    setSending(true);
+    if (!selectedId) return;
+    if (!attachment && !draft.trim()) return;
+
     setSendError("");
+    if (attachment) {
+      // Lampiran dikirim bersama teks yang sudah diketik sebagai caption —
+      // persis seperti WhatsApp Business: satu foto + satu keterangan.
+      setUploading(true);
+      try {
+        await api.upload(
+          `/conversations/${selectedId}/attachments`,
+          attachment.file,
+          draft.trim() ? { caption: draft.trim() } : {}
+        );
+        clearAttachment();
+        setDraft("");
+        await loadMessages(selectedId);
+        await loadConversations();
+      } catch (err) {
+        setSendError(err.message);
+      } finally {
+        setUploading(false);
+      }
+      return;
+    }
+
+    setSending(true);
     try {
       await api.post(`/conversations/${selectedId}/messages`, { body: draft });
       setDraft("");
@@ -197,6 +249,11 @@ export default function Conversations() {
     } finally {
       setSending(false);
     }
+  };
+
+  const insertEmoji = (emoji) => {
+    setDraft((d) => d + emoji);
+    draftRef.current?.focus();
   };
 
   const markClosingWon = async () => {
@@ -495,17 +552,82 @@ export default function Conversations() {
               </div>
 
               {sendError && <div className="error-box">{sendError}</div>}
+              {attachment && (
+                <div className="chat-attach-preview">
+                  {attachment.previewUrl ? (
+                    <img src={attachment.previewUrl} alt="" />
+                  ) : (
+                    <span className="chat-attach-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6ZM14 2v6h6" />
+                      </svg>
+                    </span>
+                  )}
+                  <div className="chat-attach-info">
+                    <strong>{attachment.file.name}</strong>
+                    <span>{formatBytes(attachment.file.size)}</span>
+                  </div>
+                  <button type="button" className="chat-attach-remove" onClick={clearAttachment} aria-label="Batalkan lampiran">
+                    &times;
+                  </button>
+                </div>
+              )}
+
               <form className="chat-composer" onSubmit={onSend}>
                 <input
+                  ref={fileRef}
+                  type="file"
+                  hidden
+                  onChange={onPickFile}
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,audio/mpeg,audio/ogg,audio/mp4,application/pdf,.doc,.docx,.xls,.xlsx,.txt"
+                />
+                <button
+                  type="button"
+                  className="chat-composer-btn"
+                  onClick={() => fileRef.current?.click()}
+                  aria-label="Lampirkan berkas"
+                  title="Lampirkan foto, video, audio, atau dokumen"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M21.4 11.05 12.25 20.2a5.5 5.5 0 0 1-7.78-7.78l9.2-9.2a3.67 3.67 0 1 1 5.18 5.18l-9.2 9.2a1.83 1.83 0 1 1-2.6-2.6l8.5-8.48" />
+                  </svg>
+                </button>
+                <div className="chat-emoji-wrap">
+                  <button
+                    type="button"
+                    className={`chat-composer-btn ${emojiOpen ? "active" : ""}`}
+                    onClick={() => setEmojiOpen((v) => !v)}
+                    aria-label="Sisipkan emoji"
+                    aria-expanded={emojiOpen}
+                    title="Emoji"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01" />
+                    </svg>
+                  </button>
+                  {emojiOpen && <EmojiPicker onPick={insertEmoji} onClose={() => setEmojiOpen(false)} />}
+                </div>
+                <input
+                  ref={draftRef}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Tulis balasan..."
+                  placeholder={attachment ? "Tambahkan keterangan (boleh dikosongkan)..." : "Tulis balasan..."}
                   aria-label="Tulis balasan"
                 />
-                <button className="chat-send" type="submit" disabled={sending} aria-label="Kirim">
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M3 11 20 3l-4 18-6-8-7-2Z" />
-                  </svg>
+                <button
+                  className="chat-send"
+                  type="submit"
+                  disabled={sending || uploading || (!attachment && !draft.trim())}
+                  aria-label="Kirim"
+                >
+                  {uploading ? (
+                    <span className="chat-send-spinner" aria-hidden="true" />
+                  ) : (
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M3 11 20 3l-4 18-6-8-7-2Z" />
+                    </svg>
+                  )}
                 </button>
               </form>
             </>

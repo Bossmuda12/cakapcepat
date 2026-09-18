@@ -104,6 +104,43 @@ export async function sendDocument({ phoneNumberId, accessToken, to, documentUrl
   });
 }
 
+interface SendVideoParams {
+  phoneNumberId: string;
+  accessToken: string;
+  to: string;
+  /** Sama seperti imageUrl — wajib url publik yang bisa diambil server Meta. */
+  videoUrl: string;
+  caption?: string;
+}
+
+interface SendAudioParams {
+  phoneNumberId: string;
+  accessToken: string;
+  to: string;
+  /** Sama seperti imageUrl — wajib url publik yang bisa diambil server Meta. */
+  audioUrl: string;
+}
+
+/** Kirim video keluar lewat Cloud API resmi. */
+export async function sendVideo({ phoneNumberId, accessToken, to, videoUrl, caption }: SendVideoParams) {
+  return callGraphApi(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp",
+    to,
+    type: "video",
+    video: { link: videoUrl, caption },
+  });
+}
+
+/** Kirim audio/voice note keluar lewat Cloud API resmi (tanpa caption — Meta tidak menerimanya untuk audio). */
+export async function sendAudio({ phoneNumberId, accessToken, to, audioUrl }: SendAudioParams) {
+  return callGraphApi(phoneNumberId, accessToken, {
+    messaging_product: "whatsapp",
+    to,
+    type: "audio",
+    audio: { link: audioUrl },
+  });
+}
+
 interface WhatsAppSendResult {
   messaging_product?: string;
   contacts?: { input: string; wa_id: string }[];

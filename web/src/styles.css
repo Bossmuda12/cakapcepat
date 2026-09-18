@@ -2435,3 +2435,117 @@ tr:last-child td { border-bottom: none; }
   .chat-list { max-height: 340px; }
   .chat-thread { min-height: 70vh; }
 }
+
+/* --- Composer: lampiran & emoji (menyamai WhatsApp Business) --- */
+.chat-composer-btn {
+  width: 38px; height: 38px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--panel);
+  cursor: pointer;
+}
+.chat-composer-btn svg {
+  width: 18px; height: 18px;
+  stroke: var(--text-muted); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.chat-composer-btn:hover svg { stroke: var(--primary); }
+.chat-composer-btn.active { border-color: var(--primary); }
+.chat-composer-btn.active svg { stroke: var(--primary); }
+
+.chat-emoji-wrap { position: relative; display: inline-flex; }
+.emoji-picker {
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 0;
+  width: 296px;
+  max-height: 290px;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 14px 40px rgba(8, 15, 30, 0.18);
+  overflow: hidden;
+  z-index: 40;
+}
+.emoji-tabs { display: flex; gap: 2px; padding: 6px; border-bottom: 1px solid var(--border); }
+.emoji-tab {
+  flex: 1;
+  padding: 6px 0;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 17px;
+  cursor: pointer;
+  line-height: 1;
+}
+.emoji-tab:hover { background: var(--bg); }
+.emoji-tab.active { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+@supports not (background: color-mix(in srgb, red 10%, transparent)) {
+  .emoji-tab.active { background: #eef2ff; }
+}
+.emoji-grid {
+  flex: 1;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
+  padding: 8px;
+}
+.emoji-cell {
+  border: none;
+  background: none;
+  border-radius: 8px;
+  padding: 4px 0;
+  font-size: 20px;
+  line-height: 1.25;
+  cursor: pointer;
+}
+.emoji-cell:hover { background: var(--bg); }
+
+.chat-attach-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--bg);
+}
+.chat-attach-preview img { width: 46px; height: 46px; object-fit: cover; border-radius: 9px; flex-shrink: 0; }
+.chat-attach-icon {
+  width: 46px; height: 46px; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 9px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+.chat-attach-icon svg {
+  width: 20px; height: 20px;
+  stroke: var(--text-muted); fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.chat-attach-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.chat-attach-info strong {
+  font-size: 13px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-attach-info span { font-size: 12px; color: var(--text-muted); }
+.chat-attach-remove {
+  width: 28px; height: 28px; flex-shrink: 0;
+  border: none; background: none; cursor: pointer;
+  font-size: 20px; line-height: 1; color: var(--text-muted);
+  border-radius: 8px;
+}
+.chat-attach-remove:hover { background: var(--panel); color: var(--danger); }
+
+.chat-send-spinner {
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-top-color: #fff;
+  animation: chat-spin 0.8s linear infinite;
+}
+@keyframes chat-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .chat-send-spinner { animation-duration: 2.4s; } }

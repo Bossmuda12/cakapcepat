@@ -597,13 +597,28 @@ export async function disconnectQrSession(channelId: string): Promise<void> {
  * (bukan cuma nomor Cloud API resmi). Melempar error kalau sesinya sedang
  * tidak tersambung (mis. belum di-scan lagi setelah logout).
  */
-export async function sendViaQrSession(channelId: string, waNumber: string, text: string): Promise<void> {
+/**
+ * Ambil sesi yang BENAR-BENAR sudah login.
+ *
+ * Adanya entri di activeSessions belum berarti nomornya tersambung: saat server
+ * baru start, socket dibuat lebih dulu dan baru menunggu QR/pairing dipindai.
+ * Mengirim lewat socket yang belum login membuat Baileys melempar
+ * "Cannot read properties of undefined (reading 'id')" — pesan yang sama sekali
+ * tidak menjelaskan apa yang harus dilakukan pemakai. Jadi statusnya diperiksa
+ * di sini, sekali, untuk semua jalur kirim.
+ */
+function requireConnectedSession(channelId: string): ActiveSession {
   const active = activeSessions.get(channelId);
-  if (!active) {
+  if (!active || !active.sock.user?.id) {
     throw new Error(
-      "Sesi WhatsApp (QR/pairing) nomor ini sedang tidak tersambung — sambungkan ulang dari halaman Nomor WhatsApp."
+      "Nomor WhatsApp ini belum tersambung — buka halaman Nomor WhatsApp lalu pindai ulang kode QR (atau masukkan kode pemasangan) sebelum mengirim pesan."
     );
   }
+  return active;
+}
+
+export async function sendViaQrSession(channelId: string, waNumber: string, text: string): Promise<void> {
+  const active = requireConnectedSession(channelId);
   const jid = waNumber.includes("@") ? waNumber : `${waNumber}@s.whatsapp.net`;
   await active.sock.sendMessage(jid, { text });
 }
@@ -623,12 +638,7 @@ export async function sendMediaViaQrSession(
   filePath: string,
   caption?: string
 ): Promise<void> {
-  const active = activeSessions.get(channelId);
-  if (!active) {
-    throw new Error(
-      "Sesi WhatsApp (QR/pairing) nomor ini sedang tidak tersambung — sambungkan ulang dari halaman Nomor WhatsApp."
-    );
-  }
+  const active = requireConnectedSession(channelId);
   const jid = waNumberOrJid.includes("@") ? waNumberOrJid : `${waNumberOrJid}@s.whatsapp.net`;
   const diskPath = resolveDiskPath(filePath);
   const ext = path.extname(diskPath);
@@ -664,12 +674,7 @@ export async function sendMediaViaQrSession(
 export async function listGroupsForChannel(
   channelId: string
 ): Promise<{ jid: string; name: string }[]> {
-  const active = activeSessions.get(channelId);
-  if (!active) {
-    throw new Error(
-      "Sesi WhatsApp nomor ini sedang tidak tersambung — sambungkan dulu di halaman Nomor WhatsApp, lalu coba lagi."
-    );
-  }
+  const active = requireConnectedSession(channelId);
   const groups = await active.sock.groupFetchAllParticipating();
   return Object.values(groups)
     .map((g: any) => ({ jid: String(g?.id ?? ""), name: String(g?.subject ?? "(tanpa nama)") }))
