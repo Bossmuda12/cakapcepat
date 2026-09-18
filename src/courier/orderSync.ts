@@ -61,16 +61,16 @@ export async function applyCourierStatusToOrder(
 
   if (mappedStatus !== order.shipping_status) {
     await pool.query(
-      `INSERT INTO order_events (order_id, field, old_value, new_value, source, note)
-       SELECT $1, 'shipping_status', $2, $3, $4, $5
+      `INSERT INTO order_events (organization_id, order_id, field, old_value, new_value, source, note)
+       SELECT $6, $1, 'shipping_status', $2, $3, $4, $5
        FROM orders WHERE id = $1 AND organization_id = $6`,
       [order.id, order.shipping_status, mappedStatus, source, rawStatus, order.organization_id]
     );
   }
   if (hasProblem !== order.has_problem) {
     await pool.query(
-      `INSERT INTO order_events (order_id, field, old_value, new_value, source, note)
-       SELECT $1, 'has_problem', $2, $3, $4, $5
+      `INSERT INTO order_events (organization_id, order_id, field, old_value, new_value, source, note)
+       SELECT $6, $1, 'has_problem', $2, $3, $4, $5
        FROM orders WHERE id = $1 AND organization_id = $6`,
       [order.id, String(order.has_problem), String(hasProblem), source, rawStatus, order.organization_id]
     );

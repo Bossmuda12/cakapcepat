@@ -7,6 +7,7 @@ import { pool } from "../db/pool";
 import { config } from "../config";
 import { requireAuth, type AuthedRequest } from "../middleware/auth";
 import { sendVerificationEmail, sendResetPasswordEmail } from "../email";
+import { AUD_TENANT } from "../platform/auth";
 
 export const authRouter = Router();
 
@@ -67,7 +68,7 @@ authRouter.post("/auth/bootstrap", async (req, res) => {
     const token = jwt.sign(
       { userId: userRows[0].id, organizationId, role: "owner" },
       config.jwtSecret,
-      { expiresIn: "30d" }
+      { expiresIn: "30d", audience: AUD_TENANT }
     );
     res.status(201).json({ token, user: userRows[0] });
   } catch (err) {
@@ -289,7 +290,7 @@ authRouter.post("/auth/login", async (req, res) => {
   const token = jwt.sign(
     { userId: user.id, organizationId: user.organization_id, role: user.role },
     config.jwtSecret,
-    { expiresIn: "30d" }
+    { expiresIn: "30d", audience: AUD_TENANT }
   );
   res.json({
     token,
@@ -508,6 +509,7 @@ authRouter.get("/auth/google/callback", async (req, res) => {
 
     const token = jwt.sign({ userId, organizationId, role }, config.jwtSecret, {
       expiresIn: "30d",
+      audience: AUD_TENANT,
     });
     res.redirect(`${config.appUrl}/oauth-callback?token=${token}`);
   } catch (err) {
@@ -645,6 +647,7 @@ authRouter.get("/auth/facebook/callback", async (req, res) => {
 
     const token = jwt.sign({ userId, organizationId, role }, config.jwtSecret, {
       expiresIn: "30d",
+      audience: AUD_TENANT,
     });
     res.redirect(`${config.appUrl}/oauth-callback?token=${token}`);
   } catch (err) {

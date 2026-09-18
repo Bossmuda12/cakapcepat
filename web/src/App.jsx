@@ -32,6 +32,7 @@ import FollowUps from "./pages/FollowUps";
 import Courier from "./pages/Courier";
 import KnowledgeBase from "./pages/KnowledgeBase";
 import AuditLog from "./pages/AuditLog";
+import PlatformApp from "./platform/PlatformApp";
 
 /**
  * Halaman muka (/) adalah PROFIL publik CakapCepat, bukan layar login.
@@ -70,6 +71,11 @@ function Gate({ children }) {
 function AppRoutes() {
   return (
     <Routes>
+      {/* --- Panel Superadmin (control plane) ---
+          Sengaja DI LUAR <Gate>: panel ini punya sesi sendiri dengan audience
+          token yang berbeda, jadi tidak boleh ikut penjagaan sesi penjual. */}
+      <Route path="/superadmin/*" element={<PlatformApp />} />
+
       {/* --- Halaman publik --- */}
       <Route path="/" element={<Beranda />} />
       <Route path="/masuk" element={<Masuk />} />

@@ -93,9 +93,18 @@ ordersRouter.post("/conversations/:id/order-status", requireAuth, async (req: Au
 
   await pool.query(
     `INSERT INTO order_status_events
-       (conversation_id, status, value, note, changed_by, capi_event_name, capi_response_status)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-    [conversationId, status, value ?? null, note ?? null, req.auth!.userId, capiEventName, capiResponseStatus]
+       (organization_id, conversation_id, status, value, note, changed_by, capi_event_name, capi_response_status)
+     VALUES ($8, $1, $2, $3, $4, $5, $6, $7)`,
+    [
+      conversationId,
+      status,
+      value ?? null,
+      note ?? null,
+      req.auth!.userId,
+      capiEventName,
+      capiResponseStatus,
+      req.auth!.organizationId,
+    ]
   );
 
   broadcastToOrg(req.auth!.organizationId, { type: "order_status", conversationId });
@@ -670,9 +679,17 @@ ordersRouter.patch("/orders/:id/shipping", requireAuth, requireOwnerOrAdmin, asy
     }
     for (const ev of eventsToLog) {
       await client.query(
-        `INSERT INTO order_events (order_id, field, old_value, new_value, source, actor_user_id, note)
-         VALUES ($1, $2, $3, $4, 'manual', $5, $6)`,
-        [req.params.id, ev.field, ev.oldValue, ev.newValue, actorUserId, next.problemReason ?? null]
+        `INSERT INTO order_events (organization_id, order_id, field, old_value, new_value, source, actor_user_id, note)
+         VALUES ($7, $1, $2, $3, $4, 'manual', $5, $6)`,
+        [
+          req.params.id,
+          ev.field,
+          ev.oldValue,
+          ev.newValue,
+          actorUserId,
+          next.problemReason ?? null,
+          req.auth!.organizationId,
+        ]
       );
     }
 
@@ -732,9 +749,15 @@ ordersRouter.patch("/orders/:id/cod", requireAuth, requireOwnerOrAdmin, async (r
   );
 
   await pool.query(
-    `INSERT INTO order_events (order_id, field, old_value, new_value, source, actor_user_id)
-     VALUES ($1, 'cod_received', $2, $3, 'manual', $4)`,
-    [req.params.id, String(existingRows[0].cod_received), String(codReceived), req.auth!.userId]
+    `INSERT INTO order_events (organization_id, order_id, field, old_value, new_value, source, actor_user_id)
+     VALUES ($5, $1, 'cod_received', $2, $3, 'manual', $4)`,
+    [
+      req.params.id,
+      String(existingRows[0].cod_received),
+      String(codReceived),
+      req.auth!.userId,
+      req.auth!.organizationId,
+    ]
   );
 
   await writeAudit({
@@ -838,9 +861,9 @@ ordersRouter.post("/orders/import-tracking", requireAuth, requireOwnerOrAdmin, a
     );
 
     await pool.query(
-      `INSERT INTO order_events (order_id, field, old_value, new_value, source, actor_user_id, note)
-       VALUES ($1, 'tracking_no', NULL, $2, 'manual', $3, 'Impor massal resi CSV')`,
-      [orderRow.id, item.trackingNo, req.auth!.userId]
+      `INSERT INTO order_events (organization_id, order_id, field, old_value, new_value, source, actor_user_id, note)
+       VALUES ($4, $1, 'tracking_no', NULL, $2, 'manual', $3, 'Impor massal resi CSV')`,
+      [orderRow.id, item.trackingNo, req.auth!.userId, req.auth!.organizationId]
     );
 
     updated.push({ orderId: updatedRows[0].id, trackingNo: updatedRows[0].tracking_no });

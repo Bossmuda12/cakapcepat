@@ -34,8 +34,10 @@ async function one<T = any>(sql: string, params: any[] = []): Promise<T> {
     [orgId, cat.id]
   );
   await pool.query(
-    `INSERT INTO product_variants (product_id, name, price_cents, stock, is_active)
-     VALUES ($1,'6ml',18900,12,true), ($1,'12ml',29900,3,true)`, [prod.id]
+    `INSERT INTO product_variants (organization_id, product_id, name, price_cents, stock, is_active)
+     SELECT p.organization_id, $1, v.nama, v.harga, v.stok, true
+     FROM products p, (VALUES ('6ml',18900,12), ('12ml',29900,3)) AS v(nama,harga,stok)
+     WHERE p.id = $1`, [prod.id]
   );
   const prod2 = await one<{ id: string }>(
     `INSERT INTO products (organization_id, name, price_cents, currency, is_active)
@@ -79,8 +81,8 @@ async function one<T = any>(sql: string, params: any[] = []): Promise<T> {
     `INSERT INTO contacts (organization_id, wa_number, name) VALUES ($1,'6011${RUN}','Siti') RETURNING id`, [orgId]
   );
   const convo = await one<{ id: string }>(
-    `INSERT INTO conversations (contact_id, channel_id, status)
-     VALUES ($1,$2,'open') RETURNING id`, [contact.id, ch.id]
+    `INSERT INTO conversations (organization_id, contact_id, channel_id, status)
+     VALUES ($3,$1,$2,'open') RETURNING id`, [contact.id, ch.id, orgId]
   );
   await pool.query(
     `INSERT INTO orders (organization_id, conversation_id, contact_id, channel_id, product_id,
@@ -109,8 +111,8 @@ async function one<T = any>(sql: string, params: any[] = []): Promise<T> {
     `INSERT INTO contacts (organization_id, wa_number, name) VALUES ($1,'6019${RUN}','Amir') RETURNING id`, [orgId]
   );
   const convoKosong = await one<{ id: string }>(
-    `INSERT INTO conversations (contact_id, channel_id, status)
-     VALUES ($1,$2,'open') RETURNING id`, [contact2.id, ch.id]
+    `INSERT INTO conversations (organization_id, contact_id, channel_id, status)
+     VALUES ($3,$1,$2,'open') RETURNING id`, [contact2.id, ch.id, orgId]
   );
   const ccKosong = await buildCustomerContext(orgId, convoKosong.id);
   ok("pelanggan tanpa pesanan dinyatakan jelas", ccKosong.includes("BELUM punya pesanan"));

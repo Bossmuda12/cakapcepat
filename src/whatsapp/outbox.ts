@@ -55,8 +55,8 @@ export async function canSendNow(channelId: string): Promise<boolean> {
 /** Naikkan penghitung kirim jam berjalan untuk channel ini (dipanggil SETELAH tiap pengiriman berhasil). */
 export async function recordSend(channelId: string): Promise<void> {
   await pool.query(
-    `INSERT INTO channel_send_counters (channel_id, hour_bucket, sent_count)
-     VALUES ($1, date_trunc('hour', now()), 1)
+    `INSERT INTO channel_send_counters (organization_id, channel_id, hour_bucket, sent_count)
+     SELECT wc.organization_id, $1, date_trunc('hour', now()), 1 FROM whatsapp_channels wc WHERE wc.id = $1
      ON CONFLICT (channel_id, hour_bucket) DO UPDATE SET sent_count = channel_send_counters.sent_count + 1`,
     [channelId]
   );

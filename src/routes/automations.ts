@@ -39,10 +39,10 @@ automationsRouter.post("/automations", requireAuth, requireOwnerOrAdmin, async (
   if (!channelRows[0]) return res.status(404).json({ error: "Nomor WhatsApp tidak ditemukan" });
 
   const { rows } = await pool.query(
-    `INSERT INTO automations (channel_id, trigger_type, config, is_active)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO automations (organization_id, channel_id, trigger_type, config, is_active)
+     VALUES ($5, $1, $2, $3, $4)
      RETURNING id, channel_id, trigger_type, config, is_active, created_at`,
-    [channelId, triggerType, JSON.stringify(config), isActive]
+    [channelId, triggerType, JSON.stringify(config), isActive, req.auth!.organizationId]
   );
   res.status(201).json(rows[0]);
 });

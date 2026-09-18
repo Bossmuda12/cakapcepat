@@ -765,3 +765,356 @@ CREATE INDEX IF NOT EXISTS idx_channels_org ON whatsapp_channels(organization_id
 -- ============================================================================
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS attention_notified_at TIMESTAMPTZ;
 ALTER TABLE organization ADD COLUMN IF NOT EXISTS attention_alert_enabled BOOLEAN NOT NULL DEFAULT true;
+
+-- ############################################################################
+-- TISO — FONDASI ISOLASI TENANT DI TINGKAT DATABASE
+--
+-- Sampai sekarang isolasi antar-penjual 100% bergantung pada setiap query
+-- menulis predikatnya sendiri dengan benar. Satu query yang lupa langsung jadi
+-- kebocoran, dan tidak ada apa pun di database yang menangkapnya. Blok ini
+-- memindahkan sebagian beban itu ke Postgres.
+--
+-- Dijalankan ulang setiap deploy (migrate.ts mengeksekusi seluruh berkas ini),
+-- jadi SETIAP langkah harus aman diulang dan harus GAGAL-AMAN: kalau datanya
+-- belum bersih, langkah pengetatannya dilewati dengan RAISE NOTICE — bukan
+-- membuat deploy gagal, dan bukan juga diam-diam memaksa.
+--
+-- Urutannya sengaja: tambah kolom -> isi dari induknya -> index -> NOT NULL
+-- (hanya kalau sudah tidak ada yang kosong) -> unique komposit di induk ->
+-- foreign key komposit di anak (hanya kalau tidak ada baris campur tenant).
+-- ############################################################################
+
+-- ---------------------------------------------------------------------------
+-- 1. Tambah kolom (nullable dulu — tabel lama sudah berisi data)
+-- ---------------------------------------------------------------------------
+ALTER TABLE conversations         ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE messages              ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE broadcasts            ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE broadcast_recipients  ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE automations           ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE ad_conversion_events  ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE order_status_events   ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE whatsapp_qr_auth_keys ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE product_variants      ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE order_events          ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE channel_send_counters ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+ALTER TABLE department_members    ADD COLUMN IF NOT EXISTS organization_id UUID REFERENCES organization(id) ON DELETE CASCADE;
+
+-- ---------------------------------------------------------------------------
+-- 2. Isi dari induknya — deterministik, tidak ada yang ditebak.
+--    Urutannya penting: conversations harus terisi lebih dulu sebelum
+--    messages/ad_conversion_events/order_status_events bisa ikut terisi.
+-- ---------------------------------------------------------------------------
+
+-- conversations: tenant diambil dari CONTACTS. Jalur ini yang dipakai
+-- mayoritas kode (routes/conversations.ts, ai/customerContext.ts). Baris yang
+-- kontaknya sudah hilang tidak ditebak lewat channel — dibiarkan kosong supaya
+-- ketahuan di langkah verifikasi, bukan diberi tenant karangan.
+UPDATE conversations c
+SET organization_id = ct.organization_id
+FROM contacts ct
+WHERE c.contact_id = ct.id AND c.organization_id IS NULL;
+
+UPDATE messages m
+SET organization_id = c.organization_id
+FROM conversations c
+WHERE m.conversation_id = c.id AND m.organization_id IS NULL AND c.organization_id IS NOT NULL;
+
+UPDATE ad_conversion_events e
+SET organization_id = c.organization_id
+FROM conversations c
+WHERE e.conversation_id = c.id AND e.organization_id IS NULL AND c.organization_id IS NOT NULL;
+
+UPDATE order_status_events e
+SET organization_id = c.organization_id
+FROM conversations c
+WHERE e.conversation_id = c.id AND e.organization_id IS NULL AND c.organization_id IS NOT NULL;
+
+UPDATE broadcasts b
+SET organization_id = wc.organization_id
+FROM whatsapp_channels wc
+WHERE b.channel_id = wc.id AND b.organization_id IS NULL;
+
+UPDATE broadcast_recipients br
+SET organization_id = b.organization_id
+FROM broadcasts b
+WHERE br.broadcast_id = b.id AND br.organization_id IS NULL AND b.organization_id IS NOT NULL;
+
+UPDATE automations a
+SET organization_id = wc.organization_id
+FROM whatsapp_channels wc
+WHERE a.channel_id = wc.id AND a.organization_id IS NULL;
+
+UPDATE whatsapp_qr_auth_keys k
+SET organization_id = wc.organization_id
+FROM whatsapp_channels wc
+WHERE k.channel_id = wc.id AND k.organization_id IS NULL;
+
+UPDATE channel_send_counters cs
+SET organization_id = wc.organization_id
+FROM whatsapp_channels wc
+WHERE cs.channel_id = wc.id AND cs.organization_id IS NULL;
+
+UPDATE product_variants v
+SET organization_id = p.organization_id
+FROM products p
+WHERE v.product_id = p.id AND v.organization_id IS NULL;
+
+UPDATE order_events e
+SET organization_id = o.organization_id
+FROM orders o
+WHERE e.order_id = o.id AND e.organization_id IS NULL;
+
+UPDATE department_members dm
+SET organization_id = d.organization_id
+FROM departments d
+WHERE dm.department_id = d.id AND dm.organization_id IS NULL;
+
+-- ---------------------------------------------------------------------------
+-- 3. Index — setiap query yang kini menyaring organisasi butuh ini, kalau
+--    tidak seluruh dasbor berubah jadi sequential scan.
+-- ---------------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_conversations_org       ON conversations(organization_id);
+CREATE INDEX IF NOT EXISTS idx_messages_org            ON messages(organization_id);
+CREATE INDEX IF NOT EXISTS idx_messages_org_conv       ON messages(organization_id, conversation_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_broadcasts_org          ON broadcasts(organization_id);
+CREATE INDEX IF NOT EXISTS idx_broadcast_recipients_org ON broadcast_recipients(organization_id);
+CREATE INDEX IF NOT EXISTS idx_automations_org         ON automations(organization_id);
+CREATE INDEX IF NOT EXISTS idx_ad_conversion_org       ON ad_conversion_events(organization_id);
+CREATE INDEX IF NOT EXISTS idx_order_status_events_org ON order_status_events(organization_id);
+CREATE INDEX IF NOT EXISTS idx_qr_auth_keys_org        ON whatsapp_qr_auth_keys(organization_id);
+CREATE INDEX IF NOT EXISTS idx_product_variants_org    ON product_variants(organization_id);
+CREATE INDEX IF NOT EXISTS idx_order_events_org        ON order_events(organization_id);
+CREATE INDEX IF NOT EXISTS idx_send_counters_org       ON channel_send_counters(organization_id);
+CREATE INDEX IF NOT EXISTS idx_department_members_org  ON department_members(organization_id);
+
+-- ---------------------------------------------------------------------------
+-- 4. NOT NULL — hanya untuk tabel yang benar-benar sudah bersih.
+--    Kalau masih ada baris kosong (mis. induknya sudah terhapus), langkahnya
+--    dilewati dan dicatat, supaya deploy tidak gagal gara-gara data warisan.
+-- ---------------------------------------------------------------------------
+DO $tiso$
+DECLARE
+  t TEXT;
+  sisa BIGINT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'conversations','messages','broadcasts','broadcast_recipients','automations',
+    'ad_conversion_events','order_status_events','whatsapp_qr_auth_keys',
+    'product_variants','order_events','channel_send_counters','department_members'
+  ] LOOP
+    EXECUTE format('SELECT count(*) FROM %I WHERE organization_id IS NULL', t) INTO sisa;
+    IF sisa = 0 THEN
+      EXECUTE format('ALTER TABLE %I ALTER COLUMN organization_id SET NOT NULL', t);
+    ELSE
+      RAISE NOTICE '[TISO] % masih punya % baris tanpa organization_id — NOT NULL dilewati, perlu diperiksa manual', t, sisa;
+    END IF;
+  END LOOP;
+END
+$tiso$;
+
+-- ---------------------------------------------------------------------------
+-- 5. UNIQUE komposit di tabel induk.
+--    Ini syarat teknis supaya foreign key komposit di langkah 6 bisa dibuat:
+--    Postgres menuntut kolom yang direferensikan punya unique constraint.
+-- ---------------------------------------------------------------------------
+DO $tiso$
+DECLARE
+  r RECORD;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+    ('contacts','contacts_org_id_unique'),
+    ('whatsapp_channels','channels_org_id_unique'),
+    ('conversations','conversations_org_id_unique'),
+    ('products','products_org_id_unique'),
+    ('product_variants','product_variants_org_id_unique'),
+    ('orders','orders_org_id_unique'),
+    ('departments','departments_org_id_unique'),
+    ('users','users_org_id_unique'),
+    ('broadcasts','broadcasts_org_id_unique')
+  ) AS v(tabel, nama) LOOP
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = r.nama) THEN
+      BEGIN
+        EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I UNIQUE (organization_id, id)', r.tabel, r.nama);
+      EXCEPTION WHEN others THEN
+        RAISE NOTICE '[TISO] gagal membuat % pada %: %', r.nama, r.tabel, SQLERRM;
+      END;
+    END IF;
+  END LOOP;
+END
+$tiso$;
+
+-- ---------------------------------------------------------------------------
+-- 6. FOREIGN KEY KOMPOSIT — inti dari seluruh blok ini.
+--
+--    Sampai sekarang TIDAK ADA satu pun foreign key komposit di database ini.
+--    Semua FK satu kolom, jadi Postgres tidak punya cara menolak baris anak
+--    yang induknya milik penjual lain. Contoh paling nyata: satu baris
+--    `conversations` boleh saja punya contact_id milik penjual A dan
+--    channel_id milik penjual B — dan tidak ada yang mencegahnya.
+--
+--    Tiap constraint dipasang HANYA kalau datanya sudah konsisten. Kalau ada
+--    baris campur tenant, constraint-nya dilewati dan jumlah barisnya dicatat
+--    — merusak deploy karena data warisan jauh lebih buruk daripada memberi
+--    tahu bahwa ada yang perlu dibereskan.
+-- ---------------------------------------------------------------------------
+DO $tiso$
+DECLARE
+  r RECORD;
+  melanggar BIGINT;
+BEGIN
+  FOR r IN SELECT * FROM (VALUES
+    -- (tabel anak, nama constraint, kolom fk, tabel induk)
+    ('messages',             'messages_org_conversation_fk',    'conversation_id', 'conversations'),
+    ('ad_conversion_events', 'ad_conv_org_conversation_fk',     'conversation_id', 'conversations'),
+    ('order_status_events',  'order_status_org_conversation_fk','conversation_id', 'conversations'),
+    ('conversations',        'conversations_org_contact_fk',    'contact_id',      'contacts'),
+    ('conversations',        'conversations_org_channel_fk',    'channel_id',      'whatsapp_channels'),
+    ('broadcasts',           'broadcasts_org_channel_fk',       'channel_id',      'whatsapp_channels'),
+    ('broadcast_recipients', 'broadcast_rcpt_org_broadcast_fk', 'broadcast_id',    'broadcasts'),
+    ('broadcast_recipients', 'broadcast_rcpt_org_contact_fk',   'contact_id',      'contacts'),
+    ('automations',          'automations_org_channel_fk',      'channel_id',      'whatsapp_channels'),
+    ('whatsapp_qr_auth_keys','qr_auth_org_channel_fk',          'channel_id',      'whatsapp_channels'),
+    ('channel_send_counters','send_counters_org_channel_fk',    'channel_id',      'whatsapp_channels'),
+    ('product_variants',     'product_variants_org_product_fk', 'product_id',      'products'),
+    ('order_events',         'order_events_org_order_fk',       'order_id',        'orders'),
+    ('department_members',   'dept_members_org_department_fk',  'department_id',   'departments'),
+    ('orders',               'orders_org_contact_fk',           'contact_id',      'contacts'),
+    ('orders',               'orders_org_channel_fk',           'channel_id',      'whatsapp_channels'),
+    ('orders',               'orders_org_conversation_fk',      'conversation_id', 'conversations'),
+    ('orders',               'orders_org_product_fk',           'product_id',      'products'),
+    ('orders',               'orders_org_variant_fk',           'variant_id',      'product_variants')
+  ) AS v(anak, nama, kolom, induk) LOOP
+    CONTINUE WHEN EXISTS (SELECT 1 FROM pg_constraint WHERE conname = r.nama);
+
+    -- Hitung dulu berapa baris yang akan melanggar. Tidak ada gunanya mencoba
+    -- memasang constraint kalau sudah pasti ditolak.
+    BEGIN
+      EXECUTE format(
+        'SELECT count(*) FROM %I a JOIN %I p ON p.id = a.%I
+         WHERE a.%I IS NOT NULL AND a.organization_id IS DISTINCT FROM p.organization_id',
+        r.anak, r.induk, r.kolom, r.kolom
+      ) INTO melanggar;
+    EXCEPTION WHEN others THEN
+      RAISE NOTICE '[TISO] tidak bisa memeriksa %.%: %', r.anak, r.kolom, SQLERRM;
+      CONTINUE;
+    END;
+
+    IF melanggar > 0 THEN
+      RAISE NOTICE '[TISO] % baris di %.% menunjuk induk milik organisasi lain — constraint % dilewati',
+        melanggar, r.anak, r.kolom, r.nama;
+      CONTINUE;
+    END IF;
+
+    BEGIN
+      EXECUTE format(
+        'ALTER TABLE %I ADD CONSTRAINT %I FOREIGN KEY (organization_id, %I)
+         REFERENCES %I (organization_id, id) ON DELETE CASCADE',
+        r.anak, r.nama, r.kolom, r.induk
+      );
+    EXCEPTION WHEN others THEN
+      RAISE NOTICE '[TISO] gagal memasang %: %', r.nama, SQLERRM;
+    END;
+  END LOOP;
+END
+$tiso$;
+
+-- ---------------------------------------------------------------------------
+-- 7. users.role: batasi nilainya di tingkat database.
+--    Sebelumnya TEXT bebas — nilai apa pun bisa masuk lewat jalur yang lupa
+--    memvalidasi, termasuk nilai yang tidak dikenali oleh pengecekan peran
+--    sehingga orangnya lolos begitu saja.
+-- ---------------------------------------------------------------------------
+DO $tiso$
+DECLARE
+  aneh BIGINT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_role_check') THEN
+    SELECT count(*) INTO aneh FROM users WHERE role NOT IN ('owner','admin','agent');
+    IF aneh = 0 THEN
+      ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('owner','admin','agent'));
+    ELSE
+      RAISE NOTICE '[TISO] ada % pengguna dengan role di luar owner/admin/agent — CHECK dilewati', aneh;
+    END IF;
+  END IF;
+END
+$tiso$;
+
+-- ############################################################################
+-- SADM — CONTROL PLANE (PANEL SUPERADMIN)
+--
+-- Sengaja TERPISAH dari `users`. Menambahkan satu kolom boolean "is_superadmin"
+-- ke tabel users adalah cara paling berbahaya membangun ini: satu klaim token
+-- yang keliru langsung jadi akses baca ke seluruh data semua penjual, dan
+-- tidak ada apa pun di database yang menangkapnya. Jadi identitas staf
+-- platform punya tabelnya sendiri, tokennya punya audience sendiri, dan
+-- izinnya berbutir — bukan satu bit.
+-- ############################################################################
+
+CREATE TABLE IF NOT EXISTS platform_admins (
+  id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  email         TEXT NOT NULL UNIQUE,
+  name          TEXT,
+  password_hash TEXT NOT NULL,
+  -- platform_owner   : semua izin, termasuk mengelola staf platform
+  -- platform_admin   : tindakan penegakan + tinjauan, tidak bisa mengelola staf
+  -- support_agent    : hanya baca + minta akses ke tenant
+  -- readonly_auditor : hanya baca, termasuk catatan audit
+  role          TEXT NOT NULL DEFAULT 'readonly_auditor',
+  is_active     BOOLEAN NOT NULL DEFAULT true,
+  last_login_at TIMESTAMPTZ,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $sadm$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'platform_admins_role_check') THEN
+    ALTER TABLE platform_admins ADD CONSTRAINT platform_admins_role_check
+      CHECK (role IN ('platform_owner','platform_admin','support_agent','readonly_auditor'));
+  END IF;
+END
+$sadm$;
+
+-- Catatan audit control plane. Append-only untuk aplikasi: tidak ada satu pun
+-- rute yang meng-UPDATE atau meng-DELETE tabel ini.
+CREATE TABLE IF NOT EXISTS platform_audit_events (
+  id                 UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  platform_admin_id  UUID REFERENCES platform_admins(id) ON DELETE SET NULL,
+  actor_email        TEXT,                -- disalin saat kejadian, supaya tetap terbaca kalau akunnya dihapus
+  action             TEXT NOT NULL,       -- mis. tenant.suspend, auth.login, tenant.reactivate
+  target_type        TEXT,                -- organization | platform_admin | ...
+  target_id          UUID,
+  reason_code        TEXT,
+  reason_text        TEXT,
+  detail             JSONB,
+  ip                 TEXT,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_platform_audit_created ON platform_audit_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_platform_audit_target  ON platform_audit_events(target_type, target_id, created_at DESC);
+
+-- Status tenant. Penegakan harus benar-benar berdampak, bukan cuma label:
+-- lihat requireAuth di src/middleware/auth.ts — organisasi yang suspended
+-- ditolak di seluruh API penjual.
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS status_reason TEXT;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS status_changed_at TIMESTAMPTZ;
+ALTER TABLE organization ADD COLUMN IF NOT EXISTS status_changed_by UUID REFERENCES platform_admins(id) ON DELETE SET NULL;
+
+DO $sadm$
+DECLARE aneh BIGINT;
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'organization_status_check') THEN
+    SELECT count(*) INTO aneh FROM organization
+     WHERE status NOT IN ('active','restricted','suspended','disabled');
+    IF aneh = 0 THEN
+      ALTER TABLE organization ADD CONSTRAINT organization_status_check
+        CHECK (status IN ('active','restricted','suspended','disabled'));
+    ELSE
+      RAISE NOTICE '[SADM] ada % organisasi dengan status tak dikenal — CHECK dilewati', aneh;
+    END IF;
+  END IF;
+END
+$sadm$;
+
+CREATE INDEX IF NOT EXISTS idx_organization_status ON organization(status);

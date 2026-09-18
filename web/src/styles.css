@@ -3458,3 +3458,294 @@ tr:last-child td { border-bottom: none; }
   border-radius: 0;
 }
 .topbar-logo { height: 22px; max-width: 132px; }
+
+/* =====================================================================
+   PANEL SUPERADMIN (CONTROL PLANE)
+
+   Sengaja BEDA warna dari dasbor penjual — nila gelap, bukan ungu-terang.
+   Panel ini bisa menyentuh semua penjual sekaligus, jadi tidak boleh ada
+   satu detik pun seorang staf mengira dia sedang di dasbor biasa. Perbedaan
+   visual itu bagian dari pengamanannya, bukan hiasan.
+   ===================================================================== */
+.plat-shell {
+  display: flex;
+  min-height: 100vh;
+  background: #0a0e1a;
+  color: #e6ebf7;
+}
+.plat-loading { min-height: 100vh; display: grid; place-items: center; background: #0a0e1a; color: #93a0ba; }
+
+.plat-side {
+  width: 244px;
+  flex-shrink: 0;
+  background: linear-gradient(185deg, #141c38 0%, #0d1328 60%, #080c1c 100%);
+  border-right: 1px solid rgba(125, 211, 252, 0.16);
+  padding: 20px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.plat-side-brand { display: flex; flex-direction: column; gap: 7px; margin-bottom: 20px; }
+.plat-side-brand img { height: 30px; width: auto; align-self: flex-start; }
+.plat-side-tag {
+  align-self: flex-start;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  border: 1px solid rgba(125, 211, 252, 0.34);
+  background: rgba(125, 211, 252, 0.09);
+  padding: 3px 9px;
+  border-radius: 999px;
+}
+.plat-nav { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.plat-nav a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 9px;
+  color: #9fb0cc;
+  text-decoration: none;
+  font-size: 13.5px;
+}
+.plat-nav a:hover { background: rgba(255, 255, 255, 0.06); color: #fff; }
+.plat-nav a.active {
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.24), transparent);
+  color: #fff;
+  font-weight: 650;
+  box-shadow: inset 2px 0 0 #38bdf8;
+}
+.plat-side-foot { border-top: 1px solid rgba(148, 163, 184, 0.16); padding-top: 12px; }
+.plat-who { margin-bottom: 9px; min-width: 0; }
+.plat-who-email { font-size: 12.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+.plat-who-role { font-size: 11px; color: #7dd3fc; letter-spacing: 0.03em; }
+.plat-side-foot .act-btn { width: 100%; justify-content: center; background: rgba(255,255,255,0.05); border-color: rgba(148,163,184,0.24); color: #cbd5e1; }
+.plat-side-foot .act-btn:hover { background: rgba(248,113,113,0.12); border-color: #f87171; color: #fca5a5; }
+.plat-side-foot .act-btn svg { color: inherit; }
+
+.plat-main { flex: 1; min-width: 0; padding: 18px 24px 40px; }
+.plat-warn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: rgba(250, 204, 21, 0.09);
+  border: 1px solid rgba(250, 204, 21, 0.28);
+  color: #fde68a;
+  font-size: 12.5px;
+  margin-bottom: 20px;
+}
+.plat-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+.plat-head h1 { font-size: 25px; margin: 0 0 5px; letter-spacing: -0.01em; }
+.plat-head .page-subtitle { color: #8fa0bd; margin: 0; max-width: 680px; }
+.plat-back { color: #7dd3fc; text-decoration: none; font-size: 13px; display: inline-block; margin-bottom: 8px; }
+.plat-back:hover { text-decoration: underline; }
+
+/* Panel & tabel di dalam control plane memakai permukaan gelapnya sendiri,
+   tidak mewarisi --panel milik dasbor penjual. */
+.plat-main .panel {
+  background: #121a2e;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 14px;
+  padding: 20px;
+  margin-bottom: 18px;
+  box-shadow: none;
+}
+.plat-main .panel h2 { color: #e6ebf7; display: flex; align-items: center; gap: 8px; }
+.plat-main table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.plat-main th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7b8ba8;
+  padding: 0 12px 9px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  white-space: nowrap;
+}
+.plat-main td { padding: 11px 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.09); vertical-align: top; }
+.plat-main tr:last-child td { border-bottom: none; }
+.plat-main .empty-state { color: #8fa0bd; background: rgba(255,255,255,0.03); border-color: rgba(148,163,184,0.16); }
+.plat-main .loading-block { color: #8fa0bd; }
+.plat-main .field label { color: #cbd5e1; }
+.plat-main .field input, .plat-main .field select, .plat-main .field textarea {
+  background: #0c1322;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: #e6ebf7;
+}
+.plat-main .field-hint { color: #7b8ba8; }
+.plat-main .act-btn { background: rgba(255,255,255,0.045); border-color: rgba(148,163,184,0.22); color: #cbd5e1; }
+.plat-main .act-btn:hover { background: rgba(56,189,248,0.12); border-color: #38bdf8; color: #7dd3fc; }
+.plat-main .act-btn svg { color: inherit; }
+.plat-main .act-danger:hover { background: rgba(248,113,113,0.12); border-color: #f87171; color: #fca5a5; }
+.plat-dim { color: #7b8ba8; }
+.plat-you { color: #7dd3fc; font-size: 11.5px; }
+.plat-link { color: #7dd3fc; text-decoration: none; font-weight: 600; }
+.plat-link:hover { text-decoration: underline; }
+.plat-reason { max-width: 340px; color: #b6c2d8; }
+.plat-action { font-family: var(--font-mono); font-size: 12px; color: #a5b4fc; }
+
+/* --- Kartu angka --- */
+.plat-kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.plat-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: 13px;
+  background: #121a2e;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  text-decoration: none;
+  color: inherit;
+  border-top: 3px solid rgba(148, 163, 184, 0.3);
+}
+a.plat-kpi:hover { border-color: #38bdf8; transform: translateY(-1px); }
+.plat-kpi-label { font-size: 12px; color: #8fa0bd; }
+.plat-kpi-value { font-family: var(--font-mono); font-size: 27px; font-weight: 700; line-height: 1.1; }
+.plat-kpi-sub { font-size: 11.5px; color: #6f7f9c; }
+.plat-kpi-total { border-top-color: #38bdf8; }
+.plat-kpi.tone-active { border-top-color: #22c55e; }
+.plat-kpi.tone-restricted { border-top-color: #eab308; }
+.plat-kpi.tone-suspended { border-top-color: #f97316; }
+.plat-kpi.tone-disabled { border-top-color: #ef4444; }
+
+/* --- Lencana status --- */
+.plat-status {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.plat-status-active { background: rgba(34, 197, 94, 0.16); color: #4ade80; }
+.plat-status-restricted { background: rgba(234, 179, 8, 0.16); color: #facc15; }
+.plat-status-suspended { background: rgba(249, 115, 22, 0.16); color: #fb923c; }
+.plat-status-disabled { background: rgba(239, 68, 68, 0.16); color: #f87171; }
+.plat-status-reason { color: #b6c2d8; }
+
+.plat-chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.plat-chip { padding: 6px 12px; border-radius: 999px; background: rgba(255,255,255,0.05); border: 1px solid rgba(148,163,184,0.2); font-size: 12.5px; }
+.plat-chip b { font-family: var(--font-mono); color: #7dd3fc; }
+
+/* --- Saringan daftar --- */
+.plat-filter-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-bottom: 16px; }
+.plat-filter-bar .search-field { background: #121a2e; border-color: rgba(148,163,184,0.22); min-width: 280px; }
+.plat-filter-bar .search-field input { color: #e6ebf7; }
+.plat-filter-bar .search-field input::placeholder { color: #6f7f9c; }
+.plat-chiprow { display: flex; flex-wrap: wrap; gap: 6px; }
+.plat-filter-chip {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: transparent;
+  color: #9fb0cc;
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.plat-filter-chip:hover { color: #fff; border-color: #38bdf8; }
+.plat-filter-chip.active { background: #38bdf8; border-color: #38bdf8; color: #06283d; font-weight: 700; }
+
+/* --- Tindakan penegakan --- */
+.plat-action-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
+.plat-action-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  padding: 15px 17px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background: rgba(255, 255, 255, 0.03);
+  color: #cbd5e1;
+  cursor: pointer;
+  font-family: inherit;
+}
+.plat-action-card strong { font-size: 14.5px; color: #fff; }
+.plat-action-card span { font-size: 12px; line-height: 1.55; color: #8fa0bd; }
+.plat-action-card:hover { border-color: rgba(125, 211, 252, 0.5); }
+.plat-action-card.tone-warn:hover { border-color: #eab308; }
+.plat-action-card.tone-danger:hover { border-color: #f87171; }
+.plat-action-card.tone-ok:hover { border-color: #4ade80; }
+.plat-action-card.picked { border-color: #38bdf8; box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18); }
+
+.plat-confirm {
+  margin-top: 18px;
+  padding: 18px;
+  border-radius: 12px;
+  border: 1px solid rgba(248, 113, 113, 0.36);
+  background: rgba(248, 113, 113, 0.06);
+}
+.plat-confirm-head { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 14px; color: #fca5a5; font-size: 13px; line-height: 1.55; }
+.plat-confirm-head svg { flex-shrink: 0; margin-top: 2px; }
+.plat-confirm-head code { color: #fff; }
+.plat-confirm-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+.plat-note p { color: #8fa0bd; font-size: 13.5px; line-height: 1.65; margin: 0; }
+
+.plat-main .pagination-bar { color: #8fa0bd; border-top-color: rgba(148,163,184,0.14); }
+.plat-main .pagination-bar > div { display: flex; gap: 8px; }
+.plat-main .success-box { background: rgba(34,197,94,0.1); border-color: rgba(34,197,94,0.32); color: #86efac; }
+.plat-main .error-box { background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.34); color: #fca5a5; }
+
+/* --- Halaman masuk panel --- */
+.plat-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(120% 120% at 20% 0%, #16203f 0%, #0b1122 55%, #070a15 100%);
+}
+.plat-login-card {
+  width: 100%;
+  max-width: 420px;
+  background: rgba(18, 26, 46, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 18px;
+  padding: 30px;
+  color: #e6ebf7;
+}
+.plat-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: #7dd3fc;
+  border: 1px solid rgba(125, 211, 252, 0.34);
+  background: rgba(125, 211, 252, 0.09);
+  padding: 4px 11px;
+  border-radius: 999px;
+  margin-bottom: 16px;
+}
+.plat-login-card h1 { font-size: 24px; margin: 0 0 8px; }
+.plat-login-sub { color: #8fa0bd; font-size: 13.5px; line-height: 1.6; margin: 0 0 22px; }
+.plat-login-card .field label { color: #cbd5e1; }
+.plat-login-card .field input {
+  background: #0c1322;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: #e6ebf7;
+}
+.plat-login-note { margin: 18px 0 0; font-size: 11.5px; color: #6f7f9c; line-height: 1.6; }
+.plat-login-note code { color: #7dd3fc; }
+.plat-login-card .error-box { background: rgba(248,113,113,0.1); border-color: rgba(248,113,113,0.34); color: #fca5a5; }
+
+@media (max-width: 860px) {
+  .plat-shell { flex-direction: column; }
+  .plat-side { width: 100%; height: auto; position: static; flex-direction: row; align-items: center; gap: 14px; padding: 12px 14px; overflow-x: auto; }
+  .plat-side-brand { margin: 0; flex-shrink: 0; }
+  .plat-nav { flex-direction: row; flex: 1; }
+  .plat-nav a span { display: none; }
+  .plat-side-foot { border: none; padding: 0; flex-shrink: 0; }
+  .plat-who { display: none; }
+  .plat-main { padding: 14px; }
+  .plat-reason { max-width: 200px; }
+}

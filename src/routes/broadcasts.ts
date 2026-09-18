@@ -35,10 +35,10 @@ broadcastsRouter.post("/broadcasts", requireAuth, requireOwnerOrAdmin, async (re
     await client.query("BEGIN");
 
     const { rows: broadcastRows } = await client.query(
-      `INSERT INTO broadcasts (channel_id, name, template_name, template_params, target_label, status)
-       VALUES ($1, $2, $3, $4, $5, 'queued')
+      `INSERT INTO broadcasts (organization_id, channel_id, name, template_name, template_params, target_label, status)
+       VALUES ($6, $1, $2, $3, $4, $5, 'queued')
        RETURNING id`,
-      [channelId, name, templateName, JSON.stringify(templateParams ?? []), targetLabel ?? null]
+      [channelId, name, templateName, JSON.stringify(templateParams ?? []), targetLabel ?? null, organizationId]
     );
     const broadcastId = broadcastRows[0].id;
 
@@ -47,8 +47,8 @@ broadcastsRouter.post("/broadcasts", requireAuth, requireOwnerOrAdmin, async (re
     if (targetLabel) params.push(targetLabel);
 
     await client.query(
-      `INSERT INTO broadcast_recipients (broadcast_id, contact_id)
-       SELECT $1, id FROM contacts WHERE organization_id = $2 ${targetFilter}`,
+      `INSERT INTO broadcast_recipients (organization_id, broadcast_id, contact_id)
+       SELECT $2, $1, id FROM contacts WHERE organization_id = $2 ${targetFilter}`,
       params
     );
 

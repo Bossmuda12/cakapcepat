@@ -82,8 +82,8 @@ async function readAuthKey(channelId: string, keyName: string): Promise<any> {
 async function writeAuthKey(channelId: string, keyName: string, value: unknown): Promise<void> {
   const json = JSON.parse(JSON.stringify(value, BufferJSON.replacer));
   await pool.query(
-    `INSERT INTO whatsapp_qr_auth_keys (channel_id, key_name, value, updated_at)
-     VALUES ($1, $2, $3, now())
+    `INSERT INTO whatsapp_qr_auth_keys (organization_id, channel_id, key_name, value, updated_at)
+     SELECT wc.organization_id, $1, $2, $3, now() FROM whatsapp_channels wc WHERE wc.id = $1
      ON CONFLICT (channel_id, key_name) DO UPDATE SET value = $3, updated_at = now()`,
     [channelId, keyName, json]
   );

@@ -69,13 +69,14 @@ async function buildTenant(label: string, trackingNo: string): Promise<Tenant> {
     [org.id, `+60199888777`, `Pelanggan Kembar`]
   );
   const conversation = await one<{ id: string }>(
-    `INSERT INTO conversations (contact_id, channel_id, status) VALUES ($1, $2, 'open') RETURNING id`,
-    [contact.id, channel.id]
+    `INSERT INTO conversations (organization_id, contact_id, channel_id, status)
+     VALUES ($3, $1, $2, 'open') RETURNING id`,
+    [contact.id, channel.id, org.id]
   );
   await pool.query(
-    `INSERT INTO messages (conversation_id, direction, content_type, content, sender_type)
-     VALUES ($1, 'inbound', 'text', $2, 'customer')`,
-    [conversation.id, JSON.stringify({ body: `Halo, saya mahu tanya ${canary}` })]
+    `INSERT INTO messages (organization_id, conversation_id, direction, content_type, content, sender_type)
+     VALUES ($3, $1, 'inbound', 'text', $2, 'customer')`,
+    [conversation.id, JSON.stringify({ body: `Halo, saya mahu tanya ${canary}` }), org.id]
   );
   const product = await one<{ id: string }>(
     `INSERT INTO products (organization_id, name, price_cents, currency, is_active)

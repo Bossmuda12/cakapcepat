@@ -317,9 +317,9 @@ conversationsRouter.post(
       }
 
       const { rows: msgRows } = await pool.query(
-        `INSERT INTO messages (conversation_id, direction, sender_type, sender_user_id, wa_message_id,
+        `INSERT INTO messages (organization_id, conversation_id, direction, sender_type, sender_user_id, wa_message_id,
                                content_type, content, status, media_type, media_mime, media_url, media_size)
-         VALUES ($1, 'outbound', 'human', $2, $3, $4, $5, 'sent', $6, $7, $8, $9)
+         VALUES ($10, $1, 'outbound', 'human', $2, $3, $4, $5, 'sent', $6, $7, $8, $9)
          RETURNING id, direction, sender_type, content_type, content, status, created_at,
                    media_type, media_mime, media_url, media_size`,
         [
@@ -377,10 +377,16 @@ conversationsRouter.post("/conversations/:id/messages", requireAuth, async (req:
     }
 
     const { rows: msgRows } = await pool.query(
-      `INSERT INTO messages (conversation_id, direction, sender_type, sender_user_id, wa_message_id, content_type, content, status)
-       VALUES ($1, 'outbound', 'human', $2, $3, 'text', $4, 'sent')
+      `INSERT INTO messages (organization_id, conversation_id, direction, sender_type, sender_user_id, wa_message_id, content_type, content, status)
+       VALUES ($5, $1, 'outbound', 'human', $2, $3, 'text', $4, 'sent')
        RETURNING id, direction, sender_type, content_type, content, status, created_at`,
-      [req.params.id, req.auth!.userId, waMessageId, JSON.stringify({ body: parsed.data.body })]
+      [
+        req.params.id,
+        req.auth!.userId,
+        waMessageId,
+        JSON.stringify({ body: parsed.data.body }),
+        req.auth!.organizationId,
+      ]
     );
     await pool.query("UPDATE conversations SET last_message_at = now() WHERE id = $1", [req.params.id]);
     broadcastToOrg(req.auth!.organizationId, { type: "message", conversationId: req.params.id });

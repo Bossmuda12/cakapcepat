@@ -110,16 +110,16 @@ export async function reportConversionToMeta({
     const message = String((err as Error)?.message ?? err);
     console.error(`[capi] Gagal menghubungi Meta CAPI untuk conversation ${conversationId}:`, err);
     await pool.query(
-      `INSERT INTO ad_conversion_events (conversation_id, event_name, ctwa_clid, payload_sent, response_status)
-       VALUES ($1, $2, $3, $4, $5)`,
+      `INSERT INTO ad_conversion_events (organization_id, conversation_id, event_name, ctwa_clid, payload_sent, response_status)
+       SELECT c.organization_id, $1, $2, $3, $4, $5 FROM conversations c WHERE c.id = $1`,
       [conversationId, eventName, row.ctwa_clid, JSON.stringify({ ...payload, _error: message }), null]
     );
     return null;
   }
 
   await pool.query(
-    `INSERT INTO ad_conversion_events (conversation_id, event_name, ctwa_clid, payload_sent, response_status)
-     VALUES ($1, $2, $3, $4, $5)`,
+    `INSERT INTO ad_conversion_events (organization_id, conversation_id, event_name, ctwa_clid, payload_sent, response_status)
+     SELECT c.organization_id, $1, $2, $3, $4, $5 FROM conversations c WHERE c.id = $1`,
     [conversationId, eventName, row.ctwa_clid, JSON.stringify(payload), res.status]
   );
 

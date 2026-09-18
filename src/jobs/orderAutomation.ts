@@ -181,8 +181,8 @@ async function createOrderFromClassification(
   );
 
   await pool.query(
-    `INSERT INTO order_events (order_id, field, old_value, new_value, source, note)
-     VALUES ($1, 'sales_status', NULL, 'closing', 'ai', $2)`,
+    `INSERT INTO order_events (organization_id, order_id, field, old_value, new_value, source, note)
+     SELECT o.organization_id, $1, 'sales_status', NULL, 'closing', 'ai', $2 FROM orders o WHERE o.id = $1`,
     [orderRows[0].id, "Order dibuat otomatis dari hasil classifyConversation (F-8)."]
   );
 }

@@ -71,14 +71,14 @@ export async function ingestInboundMessage(
   // ctwa_clid/ad_source_url diisi kalau belum ada (tidak menimpa yang sudah
   // tercatat dari pesan pertama).
   const { rows: convoRows } = await pool.query(
-    `INSERT INTO conversations (contact_id, channel_id, ctwa_clid, ad_source_url, last_message_at)
-     VALUES ($1, $2, $3, $4, now())
+    `INSERT INTO conversations (organization_id, contact_id, channel_id, ctwa_clid, ad_source_url, last_message_at)
+     VALUES ($5, $1, $2, $3, $4, now())
      ON CONFLICT (contact_id, channel_id) DO UPDATE SET
        last_message_at = now(),
        ctwa_clid = COALESCE(conversations.ctwa_clid, EXCLUDED.ctwa_clid),
        ad_source_url = COALESCE(conversations.ad_source_url, EXCLUDED.ad_source_url)
      RETURNING id`,
-    [contactId, channelId, ctwaClid ?? null, adSourceUrl ?? null]
+    [contactId, channelId, ctwaClid ?? null, adSourceUrl ?? null, organizationId]
   );
 
   const conversationId: string = convoRows[0].id;
@@ -98,10 +98,10 @@ export async function ingestInboundMessage(
   // saat duplicate=true supaya balasan tidak ikut terkirim dobel.
   const { rows: messageRows } = await pool.query(
     `INSERT INTO messages (
-       conversation_id, direction, wa_message_id, content_type, content, status,
+       organization_id, conversation_id, direction, wa_message_id, content_type, content, status,
        media_type, media_mime, media_url, media_size, transcript, transcribed_at
      )
-     VALUES ($1, 'inbound', $2, $3, $4, 'received', $5, $6, $7, $8, $9, $10)
+     VALUES ($11, $1, 'inbound', $2, $3, $4, 'received', $5, $6, $7, $8, $9, $10)
      ON CONFLICT (wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
      RETURNING id`,
     [
@@ -115,6 +115,7 @@ export async function ingestInboundMessage(
       media?.size ?? null,
       media?.transcript ?? null,
       media?.transcribedAt ?? null,
+      organizationId,
     ]
   );
   const duplicate = messageRows.length === 0;
@@ -173,9 +174,9 @@ export async function maybeAutoReply(params: MaybeAutoReplyInput) {
   const sendAndLog = async (replyText: string, senderType: "human" | "ai" = "human", status = "sent") => {
     if (status === "sent") await send(replyText);
     await pool.query(
-      `INSERT INTO messages (conversation_id, direction, sender_type, content_type, content, status)
-       VALUES ($1, 'outbound', $2, 'text', $3, $4)`,
-      [conversationId, senderType, JSON.stringify({ body: replyText }), status]
+      `INSERT INTO messages (organization_id, conversation_id, direction, sender_type, content_type, content, status)
+       VALUES ($5, $1, 'outbound', $2, 'text', $3, $4)`,
+      [conversationId, senderType, JSON.stringify({ body: replyText }), status, organizationId]
     );
     broadcastToOrg(organizationId, { type: "message", conversationId });
   };
@@ -242,9 +243,9 @@ export async function maybeAutoReply(params: MaybeAutoReplyInput) {
     send: async (bubbleText) => {
       await send(bubbleText);
       await pool.query(
-        `INSERT INTO messages (conversation_id, direction, sender_type, content_type, content, status)
-         VALUES ($1, 'outbound', 'ai', 'text', $2, 'sent')`,
-        [conversationId, JSON.stringify({ body: bubbleText })]
+        `INSERT INTO messages (organization_id, conversation_id, direction, sender_type, content_type, content, status)
+         VALUES ($3, $1, 'outbound', 'ai', 'text', $2, 'sent')`,
+        [conversationId, JSON.stringify({ body: bubbleText }), organizationId]
       );
       broadcastToOrg(organizationId, { type: "message", conversationId });
     },

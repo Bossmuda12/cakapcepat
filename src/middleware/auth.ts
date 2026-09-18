@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import jwt from "jsonwebtoken";
 import { config } from "../config";
 import { pool } from "../db/pool";
+import { AUD_PLATFORM } from "../platform/auth";
 
 export interface AuthedRequest extends Request {
   auth?: { userId: string; organizationId: string; role: string };
@@ -23,7 +24,18 @@ interface UserRow {
   id: string;
   organization_id: string;
   role: string;
+  org_status: string;
 }
+
+/**
+ * Status organisasi yang MASIH boleh memakai API penjual.
+ *
+ * `restricted` sengaja ikut: penjual yang dibatasi tetap harus bisa masuk dan
+ * melihat datanya sendiri — pembatasan fiturnya ditegakkan per-fitur, bukan
+ * dengan mengunci seluruh pintu. `suspended` dan `disabled` yang benar-benar
+ * ditolak di sini.
+ */
+const STATUS_BOLEH_MASUK = new Set(["active", "restricted"]);
 
 /** Dipanggil setelah peran/akun berubah supaya efeknya langsung terasa. */
 export function invalidateAuthCache(userId: string): void {
@@ -35,7 +47,9 @@ async function loadUser(userId: string): Promise<UserRow | null> {
   if (cached && Date.now() - cached.at < USER_CACHE_TTL_MS) return cached.row;
 
   const { rows } = await pool.query<UserRow>(
-    "SELECT id, organization_id, role FROM users WHERE id = $1",
+    `SELECT u.id, u.organization_id, u.role, o.status AS org_status
+     FROM users u JOIN organization o ON o.id = u.organization_id
+     WHERE u.id = $1`,
     [userId]
   );
   const row = rows[0] ?? null;
@@ -70,11 +84,22 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
 
   if (!token) return res.status(401).json({ error: "Token tidak ditemukan" });
 
-  let payload: { userId: string; organizationId: string; role: string };
+  let payload: { userId: string; organizationId: string; role: string; aud?: string | string[] };
   try {
     payload = jwt.verify(token, config.jwtSecret) as typeof payload;
   } catch {
     return res.status(401).json({ error: "Token tidak valid atau kedaluwarsa" });
+  }
+
+  // Token panel platform TIDAK boleh dipakai di API penjual. Keduanya
+  // ditandatangani dengan rahasia yang sama, jadi tanpa pemeriksaan ini satu
+  // sesi staf platform otomatis jadi sesi penjual mana pun yang dia mau.
+  // Token penjual lama belum punya `aud` sama sekali — itu tetap diterima,
+  // yang ditolak khusus adalah yang bertanda platform.
+  const aud = payload.aud;
+  const audList = Array.isArray(aud) ? aud : aud ? [aud] : [];
+  if (audList.includes(AUD_PLATFORM)) {
+    return res.status(401).json({ error: "Token panel platform tidak berlaku di sini" });
   }
 
   try {
@@ -88,6 +113,19 @@ export async function requireAuth(req: AuthedRequest, res: Response, next: NextF
     // dirakit orang. Ditolak, tidak dipakai sebagiannya.
     if (user.organization_id !== payload.organizationId) {
       return res.status(401).json({ error: "Token tidak cocok dengan akun — silakan masuk lagi" });
+    }
+
+    // Penegakan dari panel Superadmin harus benar-benar berdampak, bukan cuma
+    // label di layar admin. Organisasi yang ditangguhkan/dinonaktifkan ditolak
+    // di SELURUH API penjual, di satu tempat — bukan ditambal per rute.
+    if (!STATUS_BOLEH_MASUK.has(user.org_status)) {
+      return res.status(403).json({
+        error:
+          user.org_status === "disabled"
+            ? "Akun organisasi ini sudah dinonaktifkan. Hubungi dukungan CakapCepat."
+            : "Akun organisasi ini sedang ditangguhkan sementara. Hubungi dukungan CakapCepat.",
+        organizationStatus: user.org_status,
+      });
     }
 
     req.auth = {

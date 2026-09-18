@@ -64,8 +64,8 @@ variantsRouter.post("/variants", requireAuth, requireOwnerOrAdmin, async (req: A
   if (!productRows[0]) return res.status(404).json({ error: "Produk tidak ditemukan di organisasi ini" });
 
   const { rows } = await pool.query(
-    `INSERT INTO product_variants (product_id, name, price_cents, sku, stock, is_active)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO product_variants (organization_id, product_id, name, price_cents, sku, stock, is_active)
+     SELECT p.organization_id, $1, $2, $3, $4, $5, $6 FROM products p WHERE p.id = $1
      RETURNING id, product_id, name, price_cents, sku, stock, is_active, created_at`,
     [d.productId, d.name, d.priceCents ?? null, d.sku ?? null, d.stock ?? null, d.isActive ?? true]
   );
