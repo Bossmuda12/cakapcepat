@@ -3446,3 +3446,21 @@ tr:last-child td { border-bottom: none; }
   .dash-hero-side .modern-clock { width: 100%; }
 }
 .act-btn + .act-btn { margin-left: 8px; }
+
+/* ---------- Kotak logo mengikuti versi logo yang dipakai ----------
+   Logo versi terang bertulisan PUTIH. Kalau kotaknya berlatar putih, tulisan
+   itu hilang sama sekali dan yang tersisa cuma ikon birunya — persis yang
+   terjadi di halaman masuk. Jadi kotak di permukaan gelap dibuat kaca gelap,
+   dan kotak putih di bilah atas dihapus (logo di sana sudah bertukar sendiri
+   mengikuti mode terang/gelap). */
+.auth-visual-logo-chip {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  padding: 9px 15px;
+}
+.topbar-logo-chip {
+  background: none;
+  padding: 0;
+  border-radius: 0;
+}
+.topbar-logo { height: 22px; max-width: 132px; }
