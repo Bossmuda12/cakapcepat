@@ -712,12 +712,6 @@ tr:last-child td { border-bottom: none; }
   object-fit: contain;
   display: block;
 }
-.brand-tagline {
-  color: #8b95a5;
-  font-weight: 500;
-  font-size: 12px;
-}
-
 /* --- Success message box (dipasangkan dengan .error-box yang sudah ada) --- */
 .success-box {
   background: #f0fdf4;

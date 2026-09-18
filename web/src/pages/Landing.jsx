@@ -255,7 +255,7 @@ export default function Landing() {
         <div className="landing-footer-inner">
           <div>
             <strong>CakapCepat</strong>
-            <span>Otomatisasi WhatsApp berbasis AI — produk Taha Group.</span>
+            <span>Otomatisasi WhatsApp berbasis AI untuk bisnis yang jualan lewat chat.</span>
           </div>
           <nav className="landing-footer-links">
             <Link to="/masuk">Masuk</Link>
