@@ -264,12 +264,16 @@ channelsRouter.patch("/channels/:id", requireAuth, requireOwnerOrAdmin, async (r
   }
   if (setClauses.length === 0) return res.status(400).json({ error: "Tidak ada perubahan dikirim" });
 
+  // organization_id ikut di predikat: UPDATE ini bisa menulis access_token dan
+  // phone_number_id, jadi kepemilikannya dipastikan di dalam statement yang
+  // sama, bukan hanya di query pemeriksaan beberapa baris di atas.
   const { rows } = await pool.query(
     `UPDATE whatsapp_channels SET ${setClauses.join(", ")}
-     WHERE id = $1
+     WHERE id = $1 AND organization_id = $${values.length + 2}
      RETURNING id, label, display_phone_number, status, owner_user_id, product_id, department_id`,
-    [req.params.id, ...values]
+    [req.params.id, ...values, req.auth!.organizationId]
   );
+  if (!rows[0]) return res.status(404).json({ error: "Nomor WhatsApp tidak ditemukan" });
   res.json(rows[0]);
 });
 

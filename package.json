@@ -2,7 +2,7 @@
   "name": "cakapcepat",
   "version": "0.2.0",
   "private": true,
-  "description": "Kerangka MVP internal — otomasi WhatsApp untuk tim sendiri (bukan produk dijual).",
+  "description": "Kerangka MVP internal \u2014 otomasi WhatsApp untuk tim sendiri (bukan produk dijual).",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "dev:web": "vite",
@@ -11,7 +11,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "worker": "tsx watch src/queue/broadcastWorker.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test:ai": "tsx scripts/uji-otak-ai.ts"
+    "test:ai": "tsx scripts/uji-otak-ai.ts",
+    "test:isolasi": "tsx scripts/uji-isolasi-tenant.ts"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.24",

@@ -19,7 +19,7 @@ export async function summarizeConversation(
   organizationId: string,
   conversationId: string
 ): Promise<string | null> {
-  const history = await getRecentHistory(conversationId);
+  const history = await getRecentHistory(organizationId, conversationId);
   if (history.length === 0) return null;
 
   const aiConfig = await getAiConfig(organizationId);
@@ -44,10 +44,16 @@ export async function summarizeConversation(
   });
   if (!summary) return null;
 
-  await pool.query("UPDATE conversations SET ai_summary = $1, ai_summary_at = now() WHERE id = $2", [
-    summary,
-    conversationId,
-  ]);
+  // Terkunci ke organisasi: conversations belum punya organization_id, jadi
+  // tenant-nya dicek lewat contacts. Tanpa ini, satu id percakapan yang
+  // keliru bisa menimpa ringkasan AI milik organisasi lain.
+  await pool.query(
+    `UPDATE conversations c
+     SET ai_summary = $1, ai_summary_at = now()
+     FROM contacts ct
+     WHERE c.contact_id = ct.id AND c.id = $2 AND ct.organization_id = $3`,
+    [summary, conversationId, organizationId]
+  );
 
   return summary;
 }

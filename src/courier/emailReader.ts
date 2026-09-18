@@ -27,14 +27,27 @@ interface OrderRow extends OrderForCourierSync {
   organization_id: string;
 }
 
-// Cari order berdasarkan nomor resi. Kalau organizationId sudah tahu (mis.
-// dipanggil dari endpoint POST /courier/poll yang sudah login), saring
-// langsung ke organisasi itu. Kalau tidak (mis. dipanggil scheduler tanpa
-// konteks user login, satu kotak masuk Gmail dipakai bareng semua
-// organisasi), cari lintas organisasi lewat resi — organisasi dari ORDER yang
-// cocok itulah yang dipakai untuk mencatat courier_events (kolom
-// organization_id-nya NOT NULL, jadi kalau tidak ada order yang cocok DAN
-// tidak ada organizationId eksplisit, email itu terpaksa dilewati).
+// Cari order berdasarkan nomor resi.
+//
+// Kalau organizationId sudah tahu (mis. dipanggil dari endpoint
+// POST /courier/poll yang sudah login), saring langsung ke organisasi itu.
+//
+// Kalau tidak (scheduler latar belakang, satu kotak masuk Gmail dipakai
+// bareng semua organisasi), resinya dicari lintas organisasi — TAPI dengan
+// syarat keras: nomor resi itu harus cocok ke TEPAT SATU order di seluruh
+// database. Kalau cocok ke dua organisasi atau lebih, email itu DILEWATI,
+// bukan ditebak.
+//
+// Kenapa sekeras itu: `tracking_no` cuma unik PER ORGANISASI
+// (idx_orders_tracking = UNIQUE(organization_id, tracking_no) di schema.sql).
+// Dua penjual yang memakai kurir yang sama sangat mungkin punya nomor resi
+// yang sama persis, dan kurir juga memakai ulang rentang nomor. Versi lama
+// memakai `LIMIT 1` tanpa ORDER BY — jadi Postgres mengambil baris mana saja,
+// dan organisasi baris itu dipakai sebagai kebenaran. Akibatnya nyata: email
+// kurir milik penjual A bisa mengubah status pesanan penjual B jadi
+// "terkirim"/"retur"/"bermasalah", lalu jobs/orderAutomation.ts ikut
+// MENGIRIM PESAN WHATSAPP ke pelanggan penjual B soal paket yang bukan
+// miliknya. Melewati satu email jauh lebih murah daripada itu.
 async function resolveOrgAndOrder(
   organizationId: string | undefined,
   trackingNo: string
@@ -50,9 +63,18 @@ async function resolveOrgAndOrder(
 
   const { rows } = await pool.query<OrderRow>(
     `SELECT id, organization_id, shipping_status, has_problem
-     FROM orders WHERE tracking_no = $1 LIMIT 1`,
+     FROM orders WHERE tracking_no = $1 LIMIT 2`,
     [trackingNo]
   );
+
+  if (rows.length > 1) {
+    // Ambigu: resi yang sama dimiliki lebih dari satu organisasi. Tidak ada
+    // cara yang jujur untuk memilih salah satu, jadi tidak dipilih.
+    console.warn(
+      `[courier] resi ${trackingNo} cocok ke ${rows.length}+ organisasi — email dilewati, tidak ditebak`
+    );
+    return { organizationId: null, order: null };
+  }
   if (rows[0]) return { organizationId: rows[0].organization_id, order: rows[0] };
   return { organizationId: null, order: null };
 }

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import bcrypt from "bcryptjs";
 import { pool } from "../db/pool";
-import { requireAuth, type AuthedRequest } from "../middleware/auth";
+import { requireAuth, invalidateAuthCache, type AuthedRequest } from "../middleware/auth";
 
 export const usersRouter = Router();
 
@@ -104,10 +104,20 @@ usersRouter.patch("/users/:id", requireAuth, async (req: AuthedRequest, res) => 
   }
   if (setClauses.length === 0) return res.status(400).json({ error: "Tidak ada perubahan dikirim" });
 
+  // organization_id ikut di predikat, bukan cuma dicek di query terpisah di
+  // atas: UPDATE ini bisa mengubah `role` dan `password_hash`, jadi jaraknya
+  // dengan pemeriksaan kepemilikan tidak boleh jadi celah.
   const { rows } = await pool.query(
-    `UPDATE users SET ${setClauses.join(", ")} WHERE id = $1 RETURNING id, name, email, role, created_at`,
-    [req.params.id, ...values]
+    `UPDATE users SET ${setClauses.join(", ")}
+     WHERE id = $1 AND organization_id = $${values.length + 2}
+     RETURNING id, name, email, role, created_at`,
+    [req.params.id, ...values, req.auth!.organizationId]
   );
+  if (!rows[0]) return res.status(404).json({ error: "Anggota tim tidak ditemukan" });
+
+  // Peran berubah -> sesi yang sedang berjalan harus ikut berubah sekarang,
+  // bukan menunggu cache 10 detik atau login ulang.
+  invalidateAuthCache(req.params.id);
   res.json(rows[0]);
 });
 
@@ -143,5 +153,8 @@ usersRouter.delete("/users/:id", requireAuth, async (req: AuthedRequest, res) =>
     req.params.id,
     req.auth!.organizationId,
   ]);
+  // Token orang ini masih berlaku sampai 30 hari; buang cache-nya supaya
+  // request berikutnya langsung kena 401, bukan tetap masuk selama 10 detik.
+  invalidateAuthCache(req.params.id);
   res.json({ ok: true });
 });

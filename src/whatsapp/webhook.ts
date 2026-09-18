@@ -49,9 +49,36 @@ webhookRouter.post("/webhook/whatsapp", async (req: Request, res: Response) => {
   }
 });
 
+/**
+ * Verifikasi tanda tangan Meta. GAGAL-TERTUTUP.
+ *
+ * Versi lama: `if (!signatureHeader || !appSecret) return nodeEnv !== "production"`.
+ * Artinya di mana pun NODE_ENV bukan "production" — mesin developer, staging,
+ * container yang env-nya lupa diisi — SETIAP POST tanpa tanda tangan
+ * diterima. Padahal handler di bawahnya menulis ke database. Satu deploy
+ * dengan NODE_ENV salah sudah cukup untuk membuka endpoint ini ke siapa pun
+ * di internet.
+ *
+ * Satu-satunya kelonggaran yang tersisa: kalau appSecret memang belum diisi
+ * DAN ini bukan production, request diterima tapi dicatat keras di log,
+ * supaya pengembangan lokal tanpa kredensial Meta masih bisa jalan sementara
+ * kekurangannya tidak pernah diam-diam.
+ */
 function isValidSignature(req: Request): boolean {
   const signatureHeader = req.get("x-hub-signature-256");
-  if (!signatureHeader || !config.whatsapp.appSecret) return config.nodeEnv !== "production";
+
+  if (!config.whatsapp.appSecret) {
+    if (config.nodeEnv === "production") {
+      console.error("[webhook] DITOLAK: WHATSAPP_APP_SECRET belum diisi di production.");
+      return false;
+    }
+    console.warn(
+      "[webhook] WHATSAPP_APP_SECRET kosong — payload diterima TANPA verifikasi. Jangan pernah begini di production."
+    );
+    return true;
+  }
+  // Secret ada tapi tanda tangan tidak dikirim -> tolak, di lingkungan mana pun.
+  if (!signatureHeader) return false;
 
   const expected =
     "sha256=" +
@@ -90,9 +117,24 @@ async function handleIncomingPayload(body: any) {
 
       for (const status of value.statuses ?? []) {
         try {
+          // Dikunci ke nomor WhatsApp yang mengirim webhook ini.
+          //
+          // `wa_message_id` unik GLOBAL (idx_messages_wa_message_id di
+          // schema.sql), satu ruang nama yang dipakai bersama semua
+          // organisasi. Versi lama cuma `WHERE wa_message_id = $2`, jadi satu
+          // payload webhook yang diterima bisa mengubah status pesan milik
+          // organisasi mana pun. Sekarang barisnya harus benar-benar milik
+          // percakapan di channel yang phone_number_id-nya sama dengan
+          // pengirim webhook.
           await pool.query(
-            "UPDATE messages SET status = $1 WHERE wa_message_id = $2",
-            [status.status, status.id]
+            `UPDATE messages m
+             SET status = $1
+             FROM conversations c
+             JOIN whatsapp_channels wc ON wc.id = c.channel_id
+             WHERE m.conversation_id = c.id
+               AND m.wa_message_id = $2
+               AND wc.phone_number_id = $3`,
+            [status.status, status.id, phoneNumberId]
           );
         } catch (err) {
           console.error(`[webhook] Gagal memproses update status (wa_message_id=${status?.id}):`, err);

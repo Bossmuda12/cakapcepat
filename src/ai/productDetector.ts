@@ -39,9 +39,13 @@ export async function detectProduct(params: DetectProductParams): Promise<string
   const { organizationId, conversationId, channelId, incomingText, adSourceUrl } = params;
 
   // 1. Sudah terkunci sebelumnya?
-  const { rows: convoRows } = await pool.query("SELECT product_id FROM conversations WHERE id = $1", [
-    conversationId,
-  ]);
+  const { rows: convoRows } = await pool.query(
+    `SELECT c.product_id
+     FROM conversations c
+     JOIN contacts ct ON ct.id = c.contact_id
+     WHERE c.id = $1 AND ct.organization_id = $2`,
+    [conversationId, organizationId]
+  );
   const existing: string | null = convoRows[0]?.product_id ?? null;
   if (existing) return existing;
 
@@ -62,9 +66,10 @@ export async function detectProduct(params: DetectProductParams): Promise<string
 
   // 3. Nomor WA ini terikat 1 produk.
   if (!detected) {
-    const { rows: channelRows } = await pool.query("SELECT product_id FROM whatsapp_channels WHERE id = $1", [
-      channelId,
-    ]);
+    const { rows: channelRows } = await pool.query(
+      "SELECT product_id FROM whatsapp_channels WHERE id = $1 AND organization_id = $2",
+      [channelId, organizationId]
+    );
     if (channelRows[0]?.product_id) detected = channelRows[0].product_id;
   }
 
@@ -76,10 +81,16 @@ export async function detectProduct(params: DetectProductParams): Promise<string
   // Kunci hasilnya — WHERE product_id IS NULL supaya tidak menimpa kalau
   // sudah keburu diisi manual/proses lain di antara SELECT dan UPDATE ini.
   if (detected) {
-    await pool.query("UPDATE conversations SET product_id = $1 WHERE id = $2 AND product_id IS NULL", [
-      detected,
-      conversationId,
-    ]);
+    await pool.query(
+      `UPDATE conversations c
+       SET product_id = $1
+       FROM contacts ct
+       WHERE c.contact_id = ct.id
+         AND c.id = $2
+         AND c.product_id IS NULL
+         AND ct.organization_id = $3`,
+      [detected, conversationId, organizationId]
+    );
   }
 
   return detected;

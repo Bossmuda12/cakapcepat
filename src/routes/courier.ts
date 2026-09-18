@@ -49,8 +49,31 @@ courierRouter.get("/courier/events", requireAuth, async (req: AuthedRequest, res
 // belum diisi, endpoint MENOLAK SEMUA request (aman by default) daripada
 // diam-diam menerima apa saja tanpa proteksi.
 // ============================================================================
-function verifyWebhookToken(req: AuthedRequest): boolean {
-  const expected = process.env.COURIER_WEBHOOK_SECRET;
+/**
+ * Token webhook DITURUNKAN PER ORGANISASI, bukan satu token global.
+ *
+ * Versi lama memakai satu nilai COURIER_WEBHOOK_SECRET yang sama untuk semua
+ * organisasi, sementara organisasinya diambil dari potongan URL
+ * (/courier/webhook/:organizationId). Artinya siapa pun yang memegang token
+ * itu — satu kurir, satu mitra, satu bekas karyawan — bisa menulis status
+ * pengiriman ke organisasi MANA SAJA cukup dengan mengganti UUID di URL.
+ * Token global tidak pernah cocok untuk endpoint yang tenant-nya ada di URL.
+ *
+ * Sekarang tokennya = HMAC-SHA256(secret, organizationId). Tidak perlu kolom
+ * database baru, tidak perlu migrasi, dan token satu organisasi tidak berlaku
+ * untuk organisasi lain. Pemilik melihat token miliknya lewat
+ * GET /courier/webhook-token (perlu login owner/admin).
+ */
+export function deriveCourierWebhookToken(organizationId: string): string | null {
+  const secret = process.env.COURIER_WEBHOOK_SECRET;
+  if (!secret) return null;
+  return crypto.createHmac("sha256", secret).update(organizationId).digest("hex");
+}
+
+function verifyWebhookToken(req: AuthedRequest, organizationId: string): boolean {
+  const expected = deriveCourierWebhookToken(organizationId);
+  // Env var belum diisi -> tolak semua (aman by default), jangan diam-diam
+  // menerima apa pun tanpa proteksi.
   if (!expected) return false;
 
   const provided = (req.query.token as string | undefined) ?? req.get("x-webhook-secret") ?? "";
@@ -64,6 +87,24 @@ function verifyWebhookToken(req: AuthedRequest): boolean {
   return crypto.timingSafeEqual(expectedBuf, providedBuf);
 }
 
+// Pemilik/admin melihat URL webhook + token milik organisasinya sendiri.
+// Tidak pernah menampilkan COURIER_WEBHOOK_SECRET mentah — yang keluar cuma
+// turunannya, dan turunan itu hanya berlaku untuk organisasi ini.
+courierRouter.get("/courier/webhook-token", requireAuth, requireOwnerOrAdmin, (req: AuthedRequest, res) => {
+  const organizationId = req.auth!.organizationId;
+  const token = deriveCourierWebhookToken(organizationId);
+  if (!token) {
+    return res.status(503).json({
+      error: "Webhook kurir belum aktif — COURIER_WEBHOOK_SECRET belum diisi di server.",
+    });
+  }
+  res.json({
+    path: `/api/courier/webhook/${organizationId}`,
+    token,
+    header: "x-webhook-secret",
+  });
+});
+
 const webhookBodySchema = z.object({
   trackingNo: z.string().trim().min(1),
   status: z.string().trim().min(1),
@@ -72,13 +113,14 @@ const webhookBodySchema = z.object({
 });
 
 courierRouter.post("/courier/webhook/:organizationId", async (req: AuthedRequest, res) => {
-  if (!verifyWebhookToken(req)) {
-    return res.status(401).json({ error: "Token webhook tidak valid" });
-  }
-
   const organizationId = req.params.organizationId;
   if (!z.string().uuid().safeParse(organizationId).success) {
     return res.status(400).json({ error: "organizationId tidak valid" });
+  }
+  // Token diperiksa TERHADAP organisasi di URL — bukan terhadap satu token
+  // global yang berlaku untuk semua organisasi.
+  if (!verifyWebhookToken(req, organizationId)) {
+    return res.status(401).json({ error: "Token webhook tidak valid" });
   }
 
   const parsed = webhookBodySchema.safeParse(req.body);
@@ -90,7 +132,8 @@ courierRouter.post("/courier/webhook/:organizationId", async (req: AuthedRequest
     : mapStatusKeyword(status);
 
   const { rows: orderRows } = await pool.query<OrderForCourierSync>(
-    `SELECT id, shipping_status, has_problem FROM orders WHERE organization_id = $1 AND tracking_no = $2`,
+    `SELECT id, organization_id, shipping_status, has_problem
+     FROM orders WHERE organization_id = $1 AND tracking_no = $2`,
     [organizationId, trackingNo]
   );
   const order = orderRows[0] ?? null;

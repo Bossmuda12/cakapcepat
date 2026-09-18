@@ -60,7 +60,7 @@ export async function classifyConversation(
 ): Promise<OrderClassificationResult | null> {
   const { organizationId, conversationId } = params;
 
-  const history = await getRecentHistory(conversationId);
+  const history = await getRecentHistory(organizationId, conversationId);
   if (history.length === 0) return null;
 
   const aiConfig = await getAiConfig(organizationId);

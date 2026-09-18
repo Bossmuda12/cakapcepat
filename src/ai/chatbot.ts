@@ -69,11 +69,11 @@ export async function generateAiReplyDetailed(params: GenerateReplyParams): Prom
   const { organizationId, conversationId, incomingText } = params;
   if (!incomingText.trim()) return null;
 
-  const convo = await loadConversationContext(conversationId, params.channelId);
+  const convo = await loadConversationContext(organizationId, conversationId, params.channelId);
   if (!convo) return null;
   if (convo.aiPaused) return null; // (a) — chat sedang dipegang manusia / dikunci guardrail sebelumnya
 
-  const channel = await loadChannelPersona(convo.channelId);
+  const channel = await loadChannelPersona(organizationId, convo.channelId);
   if (channel && !channel.aiEnabled) return null; // (a) — AI belum dinyalakan utk nomor ini (F-3, default MATI)
 
   const guardrail = await checkGuardrails({ organizationId, conversationId, incomingText }); // (b)
@@ -107,7 +107,7 @@ export async function generateAiReplyDetailed(params: GenerateReplyParams): Prom
   const [knowledge, customer, history, openers] = await Promise.all([
     buildKnowledgeContext(organizationId, productId), // (d)
     buildCustomerContext(organizationId, conversationId), // (d2) fakta pesanan pelanggan ini
-    getRecentHistory(conversationId),
+    getRecentHistory(organizationId, conversationId),
     recentOpeners(organizationId, convo.channelId), // (f)
   ]);
 
@@ -158,12 +158,21 @@ export async function maybeGenerateAiReply(params: GenerateReplyParams): Promise
 }
 
 async function loadConversationContext(
+  organizationId: string,
   conversationId: string,
   paramChannelId?: string
 ): Promise<ConversationContext | null> {
-  const { rows } = await pool.query("SELECT channel_id, ai_paused FROM conversations WHERE id = $1", [
-    conversationId,
-  ]);
+  // Terkunci ke organisasi lewat contacts (conversations belum punya kolom
+  // organization_id). Tanpa ini, id percakapan milik organisasi lain akan
+  // mengembalikan channel_id organisasi itu — dan AI kita lalu membalas
+  // memakai nomor WhatsApp mereka.
+  const { rows } = await pool.query(
+    `SELECT c.channel_id, c.ai_paused
+     FROM conversations c
+     JOIN contacts ct ON ct.id = c.contact_id
+     WHERE c.id = $1 AND ct.organization_id = $2`,
+    [conversationId, organizationId]
+  );
   const convo = rows[0];
   if (!convo) return null;
 
@@ -173,10 +182,15 @@ async function loadConversationContext(
   };
 }
 
-async function loadChannelPersona(channelId: string): Promise<ChannelPersona | null> {
+async function loadChannelPersona(
+  organizationId: string,
+  channelId: string
+): Promise<ChannelPersona | null> {
+  // persona_prompt masuk mentah-mentah ke system prompt. Kalau channel-nya
+  // milik organisasi lain, instruksi internal organisasi itu ikut terbawa.
   const { rows } = await pool.query(
-    "SELECT ai_enabled, persona_name, persona_prompt FROM whatsapp_channels WHERE id = $1",
-    [channelId]
+    "SELECT ai_enabled, persona_name, persona_prompt FROM whatsapp_channels WHERE id = $1 AND organization_id = $2",
+    [channelId, organizationId]
   );
   const ch = rows[0];
   if (!ch) return null;

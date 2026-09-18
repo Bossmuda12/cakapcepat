@@ -56,22 +56,27 @@ export async function checkGuardrails(params: CheckGuardrailsParams): Promise<Gu
 
   if (hit.pause_ai) {
     await pool.query(
-      `UPDATE conversations
+      `UPDATE conversations c
        SET ai_paused = true, needs_attention = true, attention_reason = $1, attention_at = now()
-       WHERE id = $2`,
-      [hit.reason, conversationId]
+       FROM contacts ct
+       WHERE c.contact_id = ct.id AND c.id = $2 AND ct.organization_id = $3`,
+      [hit.reason, conversationId, organizationId]
     );
   } else {
     // Tidak dikunci, tapi TETAP ditandai butuh perhatian: permintaan diskon
     // yang tidak pernah muncul di daftar "butuh perhatian" sama saja dengan
     // hilang — pemilik tidak akan pernah tahu ada calon pembeli menawar.
     await pool.query(
-      `UPDATE conversations
+      `UPDATE conversations c
        SET needs_attention = true,
-           attention_reason = COALESCE(attention_reason, $1),
-           attention_at = COALESCE(attention_at, now())
-       WHERE id = $2 AND needs_attention = false`,
-      [hit.reason, conversationId]
+           attention_reason = COALESCE(c.attention_reason, $1),
+           attention_at = COALESCE(c.attention_at, now())
+       FROM contacts ct
+       WHERE c.contact_id = ct.id
+         AND c.id = $2
+         AND c.needs_attention = false
+         AND ct.organization_id = $3`,
+      [hit.reason, conversationId, organizationId]
     );
   }
 

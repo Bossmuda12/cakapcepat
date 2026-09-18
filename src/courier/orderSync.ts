@@ -12,6 +12,14 @@ import type { ShippingStatus } from "../routes/orders";
 // baris `orders` penuh (dari `SELECT *`), TypeScript cuma memeriksa yang perlu.
 export interface OrderForCourierSync {
   id: string;
+  /**
+   * WAJIB. Dulu tidak ada, dan UPDATE di bawah cuma memakai `WHERE id = $4`.
+   * Karena pemanggilnya (emailReader) bisa salah menebak order milik siapa
+   * saat mencocokkan nomor resi, satu email kurir bisa mengubah status
+   * pesanan MILIK ORGANISASI LAIN. Sekarang organisasinya ikut di predikat,
+   * jadi kalaupun pemanggil salah, database yang menolak.
+   */
+  organization_id: string;
   shipping_status: string;
   has_problem: boolean;
 }
@@ -47,22 +55,24 @@ export async function applyCourierStatusToOrder(
        delivered_at = CASE WHEN $1 = 'delivered' AND delivered_at IS NULL THEN now() ELSE delivered_at END,
        returned_at = CASE WHEN $1 = 'returned' AND returned_at IS NULL THEN now() ELSE returned_at END,
        updated_at = now()
-     WHERE id = $4`,
-    [mappedStatus, hasProblem, rawStatus, order.id]
+     WHERE id = $4 AND organization_id = $5`,
+    [mappedStatus, hasProblem, rawStatus, order.id, order.organization_id]
   );
 
   if (mappedStatus !== order.shipping_status) {
     await pool.query(
       `INSERT INTO order_events (order_id, field, old_value, new_value, source, note)
-       VALUES ($1, 'shipping_status', $2, $3, $4, $5)`,
-      [order.id, order.shipping_status, mappedStatus, source, rawStatus]
+       SELECT $1, 'shipping_status', $2, $3, $4, $5
+       FROM orders WHERE id = $1 AND organization_id = $6`,
+      [order.id, order.shipping_status, mappedStatus, source, rawStatus, order.organization_id]
     );
   }
   if (hasProblem !== order.has_problem) {
     await pool.query(
       `INSERT INTO order_events (order_id, field, old_value, new_value, source, note)
-       VALUES ($1, 'has_problem', $2, $3, $4, $5)`,
-      [order.id, String(order.has_problem), String(hasProblem), source, rawStatus]
+       SELECT $1, 'has_problem', $2, $3, $4, $5
+       FROM orders WHERE id = $1 AND organization_id = $6`,
+      [order.id, String(order.has_problem), String(hasProblem), source, rawStatus, order.organization_id]
     );
   }
 }

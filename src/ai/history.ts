@@ -12,15 +12,30 @@ const MAX_HISTORY_MESSAGES = 10;
  * obrolan (bukan cuma menjawab 1 pesan tanpa tahu apa yang sudah dibahas).
  * Dipakai bersama oleh chatbot.ts (balas chat), orderClassifier.ts (F-8),
  * dan summarizer.ts (F-10) — jangan duplikasi query ini di file lain.
+ *
+ * `organizationId` WAJIB. Ini query paling banyak dipakai di seluruh lapisan
+ * AI dan isinya teks mentah pesan pelanggan. Versi lama cuma menyaring
+ * `conversation_id`, jadi kalau id percakapan dari organisasi lain sampai
+ * masuk ke sini — lewat job latar belakang, id yang keliru, atau bug di
+ * pemanggil — isi chat pelanggan organisasi itu ikut masuk ke prompt AI
+ * organisasi ini. Tabel `messages` belum punya kolom organization_id, jadi
+ * tenant-nya ditelusuri lewat conversations -> contacts.
  */
-export async function getRecentHistory(conversationId: string): Promise<ChatMessage[]> {
+export async function getRecentHistory(
+  organizationId: string,
+  conversationId: string
+): Promise<ChatMessage[]> {
   const { rows } = await pool.query(
-    `SELECT direction, content
-     FROM messages
-     WHERE conversation_id = $1 AND content_type = 'text'
-     ORDER BY created_at DESC
+    `SELECT m.direction, m.content
+     FROM messages m
+     JOIN conversations c ON c.id = m.conversation_id
+     JOIN contacts ct ON ct.id = c.contact_id
+     WHERE m.conversation_id = $1
+       AND ct.organization_id = $3
+       AND m.content_type = 'text'
+     ORDER BY m.created_at DESC
      LIMIT $2`,
-    [conversationId, MAX_HISTORY_MESSAGES]
+    [conversationId, MAX_HISTORY_MESSAGES, organizationId]
   );
   const messages = rows
     .reverse()
