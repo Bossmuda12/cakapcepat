@@ -53,7 +53,7 @@ broadcastsRouter.post("/broadcasts", requireAuth, requireOwnerOrAdmin, async (re
     );
 
     await client.query("COMMIT");
-    await enqueueBroadcast(broadcastId);
+    await enqueueBroadcast(broadcastId, organizationId);
 
     res.status(201).json({ id: broadcastId, status: "queued" });
   } catch (err) {

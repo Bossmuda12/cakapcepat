@@ -9,27 +9,44 @@ import { config } from "../config";
 const delayMs = Math.max(1000, Math.floor(60_000 / config.broadcastRatePerMinute));
 
 async function processBroadcast(job: Job<BroadcastJobData>) {
-  const { broadcastId } = job.data;
+  const { broadcastId, organizationId } = job.data;
   console.log(`[worker] Mulai memproses broadcast ${broadcastId}`);
+
+  // Pekerjaan lama dari sebelum amplopnya membawa organisasi akan kosong di
+  // sini. Ditolak, bukan dijalankan "seadanya" — menjalankannya berarti
+  // kembali ke perilaku lama yang bisa memakai nomor penjual lain.
+  if (!organizationId) {
+    throw new Error(
+      `Broadcast ${broadcastId} dikirim tanpa organizationId di amplop pekerjaan — ditolak.`
+    );
+  }
 
   const { rows: broadcastRows } = await pool.query(
     `SELECT b.*, wc.phone_number_id, wc.access_token
      FROM broadcasts b
-     JOIN whatsapp_channels wc ON wc.id = b.channel_id
-     WHERE b.id = $1`,
-    [broadcastId]
+     JOIN whatsapp_channels wc
+       ON wc.id = b.channel_id AND wc.organization_id = b.organization_id
+     WHERE b.id = $1 AND b.organization_id = $2`,
+    [broadcastId, organizationId]
   );
   const broadcast = broadcastRows[0];
-  if (!broadcast) throw new Error(`Broadcast ${broadcastId} tidak ditemukan`);
+  if (!broadcast) {
+    throw new Error(
+      `Broadcast ${broadcastId} tidak ditemukan untuk organisasi ${organizationId} — mungkin id keliru atau lintas organisasi.`
+    );
+  }
 
-  await pool.query("UPDATE broadcasts SET status = 'sending' WHERE id = $1", [broadcastId]);
+  await pool.query("UPDATE broadcasts SET status = 'sending' WHERE id = $1 AND organization_id = $2", [
+    broadcastId,
+    organizationId,
+  ]);
 
   const { rows: recipients } = await pool.query(
     `SELECT br.id AS recipient_row_id, c.wa_number
      FROM broadcast_recipients br
-     JOIN contacts c ON c.id = br.contact_id
-     WHERE br.broadcast_id = $1 AND br.status = 'pending'`,
-    [broadcastId]
+     JOIN contacts c ON c.id = br.contact_id AND c.organization_id = br.organization_id
+     WHERE br.broadcast_id = $1 AND br.organization_id = $2 AND br.status = 'pending'`,
+    [broadcastId, organizationId]
   );
 
   let sent = 0;
@@ -45,14 +62,14 @@ async function processBroadcast(job: Job<BroadcastJobData>) {
         accessToken: broadcast.access_token,
       });
       await pool.query(
-        "UPDATE broadcast_recipients SET status = 'sent', sent_at = now() WHERE id = $1",
-        [recipient.recipient_row_id]
+        "UPDATE broadcast_recipients SET status = 'sent', sent_at = now() WHERE id = $1 AND organization_id = $2",
+        [recipient.recipient_row_id, organizationId]
       );
       sent++;
     } catch (err: any) {
       await pool.query(
-        "UPDATE broadcast_recipients SET status = 'failed', error = $2 WHERE id = $1",
-        [recipient.recipient_row_id, String(err?.message ?? err)]
+        "UPDATE broadcast_recipients SET status = 'failed', error = $2 WHERE id = $1 AND organization_id = $3",
+        [recipient.recipient_row_id, String(err?.message ?? err), organizationId]
       );
       failed++;
     }
@@ -62,7 +79,10 @@ async function processBroadcast(job: Job<BroadcastJobData>) {
     await sleep(jitteredDelay(delayMs));
   }
 
-  await pool.query("UPDATE broadcasts SET status = 'done' WHERE id = $1", [broadcastId]);
+  await pool.query("UPDATE broadcasts SET status = 'done' WHERE id = $1 AND organization_id = $2", [
+    broadcastId,
+    organizationId,
+  ]);
   console.log(`[worker] Selesai broadcast ${broadcastId}: ${sent} terkirim, ${failed} gagal`);
 }
 

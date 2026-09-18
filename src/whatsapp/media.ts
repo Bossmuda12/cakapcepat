@@ -120,7 +120,19 @@ export function kindFromExt(ext: string): "image" | "video" | "audio" | "documen
 export function resolveDiskPath(pathOrUrl: string): string {
   if (!/^\/?uploads\/media\//.test(pathOrUrl)) return pathOrUrl;
   const withoutPrefix = pathOrUrl.replace(/^\/?uploads\/media\//, "");
-  return path.join(UPLOAD_ROOT, withoutPrefix);
+  const target = path.resolve(UPLOAD_ROOT, withoutPrefix);
+
+  // Wajib tetap DI DALAM folder unggahan. Tanpa pemeriksaan ini, satu nilai
+  // media_url yang mengandung "../" cukup untuk membaca — dan lewat
+  // fsp.unlink saat pengiriman gagal, MENGHAPUS — berkas mana pun yang bisa
+  // dijangkau proses ini. Hari ini nilainya selalu dibuat server, tapi
+  // fungsi ini dipanggil dari beberapa tempat dan pemanggil berikutnya belum
+  // tentu seaman itu.
+  const root = path.resolve(UPLOAD_ROOT);
+  if (target !== root && !target.startsWith(root + path.sep)) {
+    throw new Error("Path media di luar folder unggahan ditolak");
+  }
+  return target;
 }
 
 export interface SaveIncomingMediaParams {

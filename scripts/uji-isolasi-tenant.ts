@@ -20,6 +20,7 @@ import { detectProduct } from "../src/ai/productDetector";
 import { applyCourierStatusToOrder } from "../src/courier/orderSync";
 import { buildCustomerContext } from "../src/ai/customerContext";
 import { deriveCourierWebhookToken } from "../src/routes/courier";
+import { resolveDiskPath } from "../src/whatsapp/media";
 
 const RUN = Date.now().toString().slice(-7);
 let pass = 0;
@@ -251,6 +252,56 @@ async function buildTenant(label: string, trackingNo: string): Promise<Tenant> {
     [A.channelId, A.orgId]
   );
   ok("channel sendiri tetap terambil", personaSendiri.rows.length === 1);
+
+  console.log("\n== 9. Database MENOLAK baris campur tenant (foreign key komposit) ==");
+  let ditolakDb = false;
+  try {
+    await pool.query(
+      `INSERT INTO conversations (organization_id, contact_id, channel_id, status)
+       VALUES ($1, $2, $3, 'open')`,
+      [A.orgId, A.contactId, B.channelId] // kontak A, channel B
+    );
+  } catch (err: any) {
+    ditolakDb = err?.code === "23503"; // foreign_key_violation
+  }
+  ok("percakapan dengan kontak A + channel B DITOLAK database", ditolakDb);
+
+  let msgDitolak = false;
+  try {
+    await pool.query(
+      `INSERT INTO messages (organization_id, conversation_id, direction, content_type, content, sender_type)
+       VALUES ($1, $2, 'inbound', 'text', $3, 'customer')`,
+      [A.orgId, B.conversationId, JSON.stringify({ body: "nyasar" })] // percakapan milik B
+    );
+  } catch (err: any) {
+    msgDitolak = err?.code === "23503";
+  }
+  ok("pesan organisasi A ke percakapan organisasi B DITOLAK database", msgDitolak);
+
+  let orgKosongDitolak = false;
+  try {
+    await pool.query(
+      `INSERT INTO messages (conversation_id, direction, content_type, content, sender_type)
+       VALUES ($1, 'inbound', 'text', $2, 'customer')`,
+      [A.conversationId, JSON.stringify({ body: "tanpa organisasi" })]
+    );
+  } catch (err: any) {
+    orgKosongDitolak = err?.code === "23502"; // not_null_violation
+  }
+  ok("pesan tanpa organization_id DITOLAK database", orgKosongDitolak);
+
+  console.log("\n== 10. Path media tidak bisa keluar dari folder unggahan ==");
+  let traversalDitolak = false;
+  try {
+    resolveDiskPath("/uploads/media/../../../../etc/passwd");
+  } catch {
+    traversalDitolak = true;
+  }
+  ok("path dengan '../' ditolak", traversalDitolak);
+  ok(
+    "path media normal tetap diterjemahkan",
+    resolveDiskPath("/uploads/media/abc/def.png").includes("abc/def.png")
+  );
 
   console.log(`\n==== HASIL: ${pass} lulus, ${fail} gagal ====`);
   await pool.end();

@@ -194,7 +194,27 @@ app.use("/api", auditRouter);
 // volume — untuk sekarang media lama bisa hilang, tapi catatan pesannya tetap
 // ada di database. Pasang Railway Volume ke /app/uploads kalau media harus awet.
 const uploadsDir = path.join(process.cwd(), "uploads");
-app.use("/uploads", express.static(uploadsDir));
+app.use(
+  "/uploads",
+  express.static(uploadsDir, {
+    // Berkas media harus tetap bisa diunduh Meta dari internet saat kita
+    // mengirim lampiran lewat Cloud API — itu sebabnya folder ini publik dan
+    // nama berkasnya UUID acak. Yang bisa dikencangkan tanpa merusak itu:
+    index: false,
+    dotfiles: "deny",
+    setHeaders(res) {
+      // Jangan sampai bukti transfer dan foto alamat pelanggan masuk hasil
+      // pencarian Google.
+      res.setHeader("X-Robots-Tag", "noindex, nofollow, noimageindex");
+      // Jangan disimpan proxy/CDN perantara.
+      res.setHeader("Cache-Control", "private, max-age=300");
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      // Berkas dari pelanggan tidak boleh dijalankan sebagai halaman di
+      // origin kita (mis. HTML/SVG yang disisipi skrip).
+      res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+    },
+  })
+);
 
 // Dashboard web (React, di-build ke folder public/) — disajikan langsung
 // dari service backend yang sama, supaya nggak perlu deploy terpisah.
