@@ -44,6 +44,24 @@ function aman(teks) {
 }
 
 /**
+ * Profil resmi CakapCepat di luar situs ini.
+ *
+ * Dipakai sebagai `sameAs` pada schema Organization. Gunanya konkret: Google
+ * memakai daftar ini untuk mengikat halaman-halaman itu ke SATU entitas yang
+ * sama. Tanpanya, halaman Facebook dan situs ini adalah dua hal yang kebetulan
+ * bernama mirip; dengannya, keduanya saling menguatkan sebagai satu merek —
+ * dan itu tepat masalah yang sedang kita hadapi, karena "cakapcepat" dikira
+ * salah ketik dari frasa umum "cakap cepat".
+ *
+ * Tambahkan Instagram/TikTok/YouTube di sini kalau akunnya sudah ada. Hanya
+ * profil yang BENAR-BENAR milik CakapCepat dan sudah diperiksa hidup — URL
+ * mati atau salah di sini justru melemahkan sinyalnya.
+ */
+const SOSIAL = [
+  "https://www.facebook.com/people/Cakapcepatcom/61594199026128/",
+];
+
+/**
  * Structured data tambahan yang HANYA dipasang di halaman depan.
  *
  * Alasannya konkret: Google membetulkan pencarian "cakapcepat" menjadi
@@ -65,6 +83,7 @@ function schemaMerek() {
       description:
         "Layanan otomatisasi WhatsApp berbasis AI untuk penjual yang beriklan di Meta Ads dan berjualan dengan sistem COD.",
       parentOrganization: { "@type": "Organization", name: "Taha Group" },
+      sameAs: SOSIAL,
     },
     {
       "@context": "https://schema.org",

@@ -64,6 +64,16 @@ function Kaki({ diIndeks }) {
         )}
       </div>
       <p className="pnd-kaki-kecil">
+        <a
+          className="pnd-sosial"
+          href="https://www.facebook.com/people/Cakapcepatcom/61594199026128/"
+          target="_blank"
+          rel="noopener"
+        >
+          CakapCepat di Facebook
+        </a>
+      </p>
+      <p className="pnd-kaki-kecil">
         CakapCepat bukan produk resmi WhatsApp dan tidak berafiliasi dengan Meta Platforms, Inc.
       </p>
     </footer>

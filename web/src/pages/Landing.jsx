@@ -317,6 +317,17 @@ export default function Landing() {
             <Link to="/panduan">Panduan</Link>
             <Link to="/privacy-policy">Kebijakan Privasi</Link>
             <Link to="/data-deletion">Penghapusan Data</Link>
+            {/* Tautan dua arah ke halaman resmi kami. Pasangannya ada di
+                schema `sameAs` (scripts/prerender.mjs): mesin pencari memakai
+                keduanya untuk memastikan halaman itu dan situs ini adalah
+                satu merek yang sama, bukan dua nama yang kebetulan mirip. */}
+            <a
+              href="https://www.facebook.com/people/Cakapcepatcom/61594199026128/"
+              target="_blank"
+              rel="noopener"
+            >
+              Facebook
+            </a>
           </nav>
         </div>
         <p className="landing-copyright">

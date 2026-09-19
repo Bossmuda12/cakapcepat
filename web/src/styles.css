@@ -4560,3 +4560,7 @@ a.plat-kpi:hover { border-color: #38bdf8; transform: translateY(-1px); }
 }
 .pnd-bar-nav > a:hover { color: #7dd3fc; }
 .pnd-bar-nav > a.landing-nav-cta:hover { color: #fff; }
+
+/* Tautan profil resmi di kaki halaman panduan. */
+.pnd-sosial { color: #7dd3fc; text-decoration: none; }
+.pnd-sosial:hover { text-decoration: underline; }
