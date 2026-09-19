@@ -34,4 +34,11 @@ Disallow: /monitor
 Disallow: /settings
 Disallow: /audit-log
 
+# Berkas HTML mentah hasil build. Isinya sama dengan URL bersihnya di atas —
+# jangan sampai terindeks dua kali. app.html adalah cangkang kosong.
+Disallow: /index.html
+Disallow: /app.html
+Disallow: /privacy-policy.html
+Disallow: /data-deletion.html
+
 Sitemap: https://www.cakapcepat.com/sitemap.xml

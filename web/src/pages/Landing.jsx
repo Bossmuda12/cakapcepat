@@ -1,4 +1,12 @@
 import { Link } from "react-router-dom";
+import {
+  HeroAurora,
+  MockupChat,
+  KartuMelayang,
+  PratinjauDasbor,
+  IlustrasiLangkah,
+  PitaAlur,
+} from "./LandingVisuals";
 
 /**
  * Halaman profil publik CakapCepat — inilah yang dilihat pengunjung baru dan
@@ -66,21 +74,25 @@ const LAYANAN = [
 const LANGKAH = [
   {
     no: "1",
+    seni: "qr",
     judul: "Hubungkan nomor WhatsApp",
     isi: "Pindai kode QR atau masukkan kode pemasangan dari ponsel Anda. Nomor lama tetap dipakai, pelanggan tidak perlu menyimpan nomor baru.",
   },
   {
     no: "2",
+    seni: "katalog",
     judul: "Isi materi produk",
     isi: "Masukkan daftar produk, harga, ongkir, dan jawaban atas pertanyaan yang paling sering muncul. Inilah bahan yang dipakai AI untuk menjawab.",
   },
   {
     no: "3",
+    seni: "atur",
     judul: "Atur gaya bicara & aturan aman",
     isi: "Tentukan sapaan, panjang balasan, jam kerja, serta topik yang harus selalu dialihkan ke manusia — misalnya tawar-menawar atau komplain berat.",
   },
   {
     no: "4",
+    seni: "pantau",
     judul: "Pantau dari satu dasbor",
     isi: "Semua percakapan, pesanan, dan laporan ada di satu tempat. Admin tinggal menangani yang benar-benar butuh manusia.",
   },
@@ -123,6 +135,9 @@ export default function Landing() {
 
       <main className="landing-main">
         <section className="landing-hero">
+          <HeroAurora />
+          <div className="landing-hero-grid">
+            <div className="landing-hero-text">
           <h1>
             Chat pelanggan dibalas otomatis.
             <br />
@@ -143,7 +158,16 @@ export default function Landing() {
               Lihat layanan kami
             </a>
           </div>
+            </div>
+
+            <div className="landing-hero-art">
+              <MockupChat />
+              <KartuMelayang />
+            </div>
+          </div>
         </section>
+
+        <PitaAlur />
 
         <section className="landing-pillars" aria-label="Ringkasan layanan">
           <div>
@@ -158,6 +182,14 @@ export default function Landing() {
             <strong>Satu dasbor</strong>
             <span>Semua nomor, percakapan, pesanan, dan laporan berada di satu tempat.</span>
           </div>
+        </section>
+
+        <section className="landing-showcase" aria-label="Pratinjau dasbor">
+          <PratinjauDasbor />
+          <p className="landing-showcase-cap">
+            Tampilan dasbor sesudah masuk: ringkasan harian, grafik closing, dan daftar pesanan
+            terbaru dalam satu layar. Angka pada gambar hanya contoh.
+          </p>
         </section>
 
         <section className="landing-section" id="visi">
@@ -206,6 +238,7 @@ export default function Landing() {
             {LANGKAH.map((s) => (
               <li key={s.no}>
                 <span className="landing-step-no">{s.no}</span>
+                <IlustrasiLangkah nama={s.seni} />
                 <h3>{s.judul}</h3>
                 <p>{s.isi}</p>
               </li>

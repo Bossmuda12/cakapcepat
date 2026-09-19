@@ -41,8 +41,16 @@ import PlatformApp from "./platform/PlatformApp";
  */
 function Beranda() {
   const { user, loading, needsBootstrap } = useAuth();
-  if (loading) return <div className="loading-block">Memuat...</div>;
-  if (!needsBootstrap && user && !user.needs_onboarding) return <Navigate to="/dashboard" replace />;
+  /* Sengaja TIDAK menampilkan "Memuat..." selama sesi diperiksa. Halaman ini
+     dikirim ke browser sebagai HTML hasil prerender (scripts/prerender.mjs);
+     kalau React langsung menggantinya dengan spinner, markup itu berkedip
+     hilang dan hydrate-nya meleset. Pengunjung yang belum masuk — termasuk
+     Googlebot — memang cuma butuh profil ini. Pengguna yang sudah punya sesi
+     dialihkan ke dasbor begitu pemeriksaan selesai, sepersekian detik lebih
+     lambat tapi tanpa layar kosong. */
+  if (!loading && !needsBootstrap && user && !user.needs_onboarding) {
+    return <Navigate to="/dashboard" replace />;
+  }
   return <Landing />;
 }
 

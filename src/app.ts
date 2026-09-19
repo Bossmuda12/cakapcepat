@@ -247,10 +247,33 @@ if (fs.existsSync(publicDir)) {
       return;
     }
     // Rute aplikasi (SPA). Halaman privat tidak boleh diindeks Google.
-    const isPublicPage = ["/", "/privacy-policy", "/data-deletion"].includes(req.path);
-    if (!isPublicPage) res.setHeader("X-Robots-Tag", "noindex");
+    //
+    // Tiga halaman publik punya berkas HTML sendiri yang sudah berisi teks
+    // lengkap hasil prerender saat build (scripts/prerender.mjs). Itu yang
+    // dibaca Googlebot dan pratinjau tautan WhatsApp/Facebook tanpa perlu
+    // menjalankan JavaScript. Rute lain tetap dapat cangkang kosong
+    // (app.html) — isi halaman di balik login tidak boleh ada di berkas
+    // statis yang bisa diambil siapa pun.
+    const HALAMAN_PRERENDER: Record<string, string> = {
+      "/": "index.html",
+      "/privacy-policy": "privacy-policy.html",
+      "/data-deletion": "data-deletion.html",
+    };
+    const berkasPrerender = HALAMAN_PRERENDER[req.path];
+    if (berkasPrerender) {
+      const penuh = path.join(publicDir, berkasPrerender);
+      if (fs.existsSync(penuh)) {
+        res.setHeader("Cache-Control", "no-cache");
+        return res.sendFile(penuh);
+      }
+    } else {
+      res.setHeader("X-Robots-Tag", "noindex");
+    }
     res.setHeader("Cache-Control", "no-cache");
-    res.sendFile(path.join(publicDir, "index.html"));
+    // app.html = cangkang tanpa prerender. Kalau belum ada (build lama),
+    // jatuh ke index.html supaya aplikasi tetap jalan.
+    const cangkang = path.join(publicDir, "app.html");
+    res.sendFile(fs.existsSync(cangkang) ? cangkang : path.join(publicDir, "index.html"));
   });
 }
 
