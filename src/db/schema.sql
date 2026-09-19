@@ -1235,3 +1235,115 @@ CREATE INDEX IF NOT EXISTS idx_access_grants_org ON platform_access_grants(organ
 CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_satu_aktif
   ON platform_access_grants(platform_admin_id, organization_id)
   WHERE status IN ('pending','active');
+
+-- ############################################################################
+-- TISO — ROW LEVEL SECURITY (lapis pertahanan KETIGA)
+--
+-- Isolasi sudah dijaga dua lapis: predikat organization_id di setiap query,
+-- dan foreign key komposit (organization_id, id) di database. RLS jadi lapis
+-- ketiga — jaring terakhir kalau suatu hari ada query baru yang lupa menulis
+-- predikatnya.
+--
+-- KEBIJAKANNYA SENGAJA PUNYA PINTU KELUAR, dan itu keputusan sadar:
+--
+--   current_setting('app.current_organization_id', true) IS NULL  ->  semua baris
+--
+-- Artinya query yang TIDAK memakai withTenantTransaction berjalan persis
+-- seperti sekarang. Tanpa pintu ini, menyalakan RLS akan langsung mematikan
+-- seluruh aplikasi: migrasi, pekerjaan latar belakang, webhook, dan panel
+-- Superadmin semuanya butuh lintas-organisasi secara sah.
+--
+-- Yang didapat sekarang: begitu sebuah jalur dibungkus withTenantTransaction,
+-- Postgres yang menegakkan batasnya — bukan lagi harapan bahwa setiap query
+-- di dalamnya ditulis dengan benar. Jalur paling berisiko (lapisan AI dan
+-- pekerjaan latar belakang) dipindahkan lebih dulu.
+--
+-- Langkah berikutnya, setelah semua jalur tenant memakai pembungkus itu:
+-- buang cabang "IS NULL" dari kebijakan di bawah, dan berikan peran database
+-- terpisah untuk migrasi/panel. Ditulis di sini supaya tidak terlupakan.
+-- ############################################################################
+
+DO $rls$
+DECLARE
+  t TEXT;
+  nama TEXT;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'contacts','conversations','messages','orders','order_events','order_status_events',
+    'products','product_variants','product_categories','whatsapp_channels','broadcasts',
+    'broadcast_recipients','automations','knowledge_base_entries','follow_ups',
+    'ai_guardrails','ai_usage_log','ai_opener_history','courier_events','ad_conversion_events',
+    'whatsapp_qr_auth_keys','channel_send_counters','departments','department_members','audit_log'
+  ] LOOP
+    -- Lewati tabel yang belum ada atau belum punya kolomnya.
+    CONTINUE WHEN NOT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = t AND column_name = 'organization_id'
+    );
+
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    -- FORCE supaya pemilik tabel pun tunduk. Tanpa ini, aplikasi yang
+    -- tersambung sebagai pemilik akan melewati RLS begitu saja dan seluruh
+    -- blok ini cuma jadi hiasan.
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+
+    nama := t || '_tenant_policy';
+    IF NOT EXISTS (SELECT 1 FROM pg_policy WHERE polname = nama) THEN
+      EXECUTE format($f$
+        CREATE POLICY %I ON %I
+        USING (
+          current_setting('app.current_organization_id', true) IS NULL
+          OR current_setting('app.current_organization_id', true) = ''
+          OR organization_id = current_setting('app.current_organization_id', true)::uuid
+        )
+        WITH CHECK (
+          current_setting('app.current_organization_id', true) IS NULL
+          OR current_setting('app.current_organization_id', true) = ''
+          OR organization_id = current_setting('app.current_organization_id', true)::uuid
+        )
+      $f$, nama, t);
+    END IF;
+  END LOOP;
+END
+$rls$;
+
+-- ---------------------------------------------------------------------------
+-- Peran khusus supaya RLS BENAR-BENAR berlaku.
+--
+-- Jebakan yang nyaris terlewat: SUPERUSER MELEWATI RLS, bahkan pada tabel yang
+-- sudah FORCE ROW LEVEL SECURITY. Aplikasi ini tersambung sebagai pemilik
+-- database (di Railway maupun di lokal), yang biasanya superuser — jadi semua
+-- kebijakan di atas terpasang rapi tapi tidak menahan apa pun. Kebijakan yang
+-- ada tapi tidak berlaku lebih berbahaya daripada tidak ada sama sekali,
+-- karena orang mengira sudah ada jaring pengaman.
+--
+-- Solusinya tidak perlu mengubah DATABASE_URL: withTenantTransaction beralih
+-- ke peran ini dengan SET LOCAL ROLE selama transaksinya, lalu kembali sendiri
+-- begitu transaksinya selesai.
+-- ---------------------------------------------------------------------------
+DO $rls$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'cakapcepat_tenant') THEN
+    -- NOLOGIN: peran ini tidak pernah dipakai untuk menyambung dari luar,
+    -- hanya untuk dipinjam sebentar di dalam transaksi.
+    CREATE ROLE cakapcepat_tenant NOLOGIN NOBYPASSRLS;
+  END IF;
+END
+$rls$;
+
+GRANT USAGE ON SCHEMA public TO cakapcepat_tenant;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO cakapcepat_tenant;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO cakapcepat_tenant;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO cakapcepat_tenant;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+  GRANT USAGE, SELECT ON SEQUENCES TO cakapcepat_tenant;
+
+-- Pengguna aplikasi harus boleh meminjam peran itu.
+DO $rls$
+BEGIN
+  EXECUTE format('GRANT cakapcepat_tenant TO %I', current_user);
+EXCEPTION WHEN others THEN
+  RAISE NOTICE '[rls] Tidak bisa memberi peran cakapcepat_tenant ke %: %', current_user, SQLERRM;
+END
+$rls$;

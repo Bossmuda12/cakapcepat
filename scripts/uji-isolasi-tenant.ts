@@ -21,6 +21,7 @@ import { applyCourierStatusToOrder } from "../src/courier/orderSync";
 import { buildCustomerContext } from "../src/ai/customerContext";
 import { deriveCourierWebhookToken } from "../src/routes/courier";
 import { resolveDiskPath } from "../src/whatsapp/media";
+import { withTenantTransaction } from "../src/db/tenantTx";
 
 const RUN = Date.now().toString().slice(-7);
 let pass = 0;
@@ -301,6 +302,87 @@ async function buildTenant(label: string, trackingNo: string): Promise<Tenant> {
   ok(
     "path media normal tetap diterjemahkan",
     resolveDiskPath("/uploads/media/abc/def.png").includes("abc/def.png")
+  );
+
+  console.log("\n== 11. Row Level Security benar-benar menegakkan ==");
+
+  // Di LUAR transaksi bertenant, perilakunya sengaja tetap seperti biasa —
+  // migrasi, pekerjaan latar belakang, dan panel platform butuh itu.
+  const bebas = await pool.query("SELECT count(*)::int AS n FROM conversations WHERE id = $1", [
+    B.conversationId,
+  ]);
+  ok("tanpa konteks tenant, query lama tetap jalan seperti biasa", bebas.rows[0].n === 1);
+
+  // Di DALAM transaksi milik organisasi A, baris milik B harus hilang —
+  // walaupun query-nya sengaja TIDAK menulis predikat organization_id.
+  const dalamA = await withTenantTransaction(A.orgId, async (tx) => {
+    const sendiri = await tx.query("SELECT count(*)::int AS n FROM conversations WHERE id = $1", [
+      A.conversationId,
+    ]);
+    const silang = await tx.query("SELECT count(*)::int AS n FROM conversations WHERE id = $1", [
+      B.conversationId,
+    ]);
+    const semua = await tx.query("SELECT count(*)::int AS n FROM conversations");
+    const pesanSilang = await tx.query("SELECT count(*)::int AS n FROM messages WHERE conversation_id = $1", [
+      B.conversationId,
+    ]);
+    const kontakSemua = await tx.query("SELECT count(*)::int AS n FROM contacts");
+    return {
+      sendiri: sendiri.rows[0].n,
+      silang: silang.rows[0].n,
+      semua: semua.rows[0].n,
+      pesanSilang: pesanSilang.rows[0].n,
+      kontakSemua: kontakSemua.rows[0].n,
+    };
+  });
+  ok("percakapan sendiri tetap terbaca", dalamA.sendiri === 1, String(dalamA.sendiri));
+  ok(
+    "percakapan organisasi lain HILANG walau query tanpa predikat",
+    dalamA.silang === 0,
+    String(dalamA.silang)
+  );
+  ok(
+    "pesan organisasi lain ikut hilang",
+    dalamA.pesanSilang === 0,
+    String(dalamA.pesanSilang)
+  );
+  ok("SELECT tanpa WHERE pun hanya mengembalikan milik sendiri", dalamA.semua >= 1);
+  ok("kontak pun tersaring otomatis", dalamA.kontakSemua >= 1);
+
+  // Menulis ke organisasi lain dari dalam transaksi A juga harus ditolak.
+  let tulisSilangDitolak = false;
+  try {
+    await withTenantTransaction(A.orgId, async (tx) => {
+      await tx.query(
+        `INSERT INTO contacts (organization_id, wa_number, name) VALUES ($1,$2,$3)`,
+        [B.orgId, "+60000000001", "Selundupan"]
+      );
+    });
+  } catch (err: any) {
+    tulisSilangDitolak = err?.code === "42501"; // insufficient_privilege (WITH CHECK)
+  }
+  ok("menulis baris untuk organisasi lain DITOLAK database", tulisSilangDitolak);
+
+  // Konteksnya tidak boleh menempel di koneksi setelah transaksinya selesai.
+  await withTenantTransaction(A.orgId, async () => {});
+  const sesudahTx = await pool.query("SELECT count(*)::int AS n FROM conversations WHERE id = $1", [
+    B.conversationId,
+  ]);
+  ok(
+    "konteks tenant TIDAK menempel di koneksi setelah transaksi selesai",
+    sesudahTx.rows[0].n === 1,
+    String(sesudahTx.rows[0].n)
+  );
+
+  const statusRls = await pool.query<{ n: string; f: string }>(
+    `SELECT count(*) AS n, count(*) FILTER (WHERE relforcerowsecurity) AS f
+     FROM pg_class c JOIN pg_namespace ns ON ns.oid = c.relnamespace
+     WHERE ns.nspname = 'public' AND c.relrowsecurity`
+  );
+  ok(
+    `RLS aktif di ${statusRls.rows[0].n} tabel dan semuanya FORCE`,
+    Number(statusRls.rows[0].n) >= 20 && statusRls.rows[0].n === statusRls.rows[0].f,
+    JSON.stringify(statusRls.rows[0])
   );
 
   console.log(`\n==== HASIL: ${pass} lulus, ${fail} gagal ====`);

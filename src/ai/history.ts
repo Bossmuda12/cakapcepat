@@ -1,4 +1,4 @@
-import { pool } from "../db/pool";
+import { withTenantTransaction } from "../db/tenantTx";
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -25,18 +25,24 @@ export async function getRecentHistory(
   organizationId: string,
   conversationId: string
 ): Promise<ChatMessage[]> {
-  const { rows } = await pool.query(
-    `SELECT m.direction, m.content
-     FROM messages m
-     JOIN conversations c ON c.id = m.conversation_id
-     JOIN contacts ct ON ct.id = c.contact_id
-     WHERE m.conversation_id = $1
-       AND ct.organization_id = $3
-       AND m.content_type = 'text'
-     ORDER BY m.created_at DESC
-     LIMIT $2`,
-    [conversationId, MAX_HISTORY_MESSAGES, organizationId]
-  );
+  // Dijalankan di dalam transaksi bertenant: selain predikat di bawah, RLS
+  // Postgres ikut menyaring. Kalau suatu hari predikatnya hilang karena
+  // query ini diubah, databasenya yang menahan.
+  const rows = await withTenantTransaction(organizationId, async (tx) => {
+    const r = await tx.query(
+      `SELECT m.direction, m.content
+       FROM messages m
+       JOIN conversations c ON c.id = m.conversation_id
+       JOIN contacts ct ON ct.id = c.contact_id
+       WHERE m.conversation_id = $1
+         AND ct.organization_id = $3
+         AND m.content_type = 'text'
+       ORDER BY m.created_at DESC
+       LIMIT $2`,
+      [conversationId, MAX_HISTORY_MESSAGES, organizationId]
+    );
+    return r.rows;
+  });
   const messages = rows
     .reverse()
     .map((m): ChatMessage => ({
