@@ -10,6 +10,7 @@ import OAuthCallback from "./pages/OAuthCallback";
 import CompleteProfile from "./pages/CompleteProfile";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import DataDeletion from "./pages/DataDeletion";
+import { PanduanIndeks, PanduanArtikel } from "./pages/panduan/Panduan";
 import Landing from "./pages/Landing";
 import Bootstrap from "./pages/Bootstrap";
 import Overview from "./pages/Overview";
@@ -96,6 +97,8 @@ function AppRoutes() {
       <Route path="/oauth-callback" element={<OAuthCallback />} />
       <Route path="/privacy-policy" element={<PrivacyPolicy />} />
       <Route path="/data-deletion" element={<DataDeletion />} />
+      <Route path="/panduan" element={<PanduanIndeks />} />
+      <Route path="/panduan/:slug" element={<PanduanArtikel />} />
 
       {/* --- Dasbor (butuh sesi) --- */}
       <Route

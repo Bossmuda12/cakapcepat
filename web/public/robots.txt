@@ -2,6 +2,7 @@ User-agent: *
 Allow: /
 Allow: /privacy-policy
 Allow: /data-deletion
+Allow: /panduan
 
 # Halaman di bawah ini butuh login atau tidak berguna di hasil pencarian
 Disallow: /api/
@@ -40,5 +41,7 @@ Disallow: /index.html
 Disallow: /app.html
 Disallow: /privacy-policy.html
 Disallow: /data-deletion.html
+Disallow: /panduan.html
+Disallow: /panduan/*.html
 
 Sitemap: https://www.cakapcepat.com/sitemap.xml

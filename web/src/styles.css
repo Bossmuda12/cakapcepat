@@ -4345,3 +4345,218 @@ a.plat-kpi:hover { border-color: #38bdf8; transform: translateY(-1px); }
   .lv-bubble { opacity: 1; transform: none; }
   .lv-bar { transform: scaleY(1); }
 }
+
+/* ==================================================================
+   HALAMAN PANDUAN (/panduan dan /panduan/<slug>)
+   Halaman ini ada supaya situs punya lebih dari satu halaman berisi —
+   satu halaman tidak bisa bersaing untuk kata kunci apa pun selain
+   nama mereknya sendiri. Dibuat untuk DIBACA: ukuran teks besar,
+   panjang baris terbatas, kontras tinggi.
+   ================================================================== */
+.pnd {
+  position: relative;
+  min-height: 100vh;
+  background: linear-gradient(165deg, #080b14 0%, #0d1220 55%, #0a0f1c 100%);
+  color: #e8edf7;
+}
+.pnd::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    radial-gradient(55% 40% at 15% 4%, rgba(34, 211, 238, 0.11), transparent 70%),
+    radial-gradient(50% 40% at 90% 12%, rgba(129, 140, 248, 0.13), transparent 70%),
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: auto, auto, 64px 64px, 64px 64px;
+}
+.pnd-inner {
+  position: relative;
+  z-index: 1;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 34px 28px 60px;
+}
+
+/* --- Kepala + remah roti --- */
+.pnd-crumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13.5px;
+  color: #8f9ab2;
+  margin-bottom: 22px;
+}
+.pnd-crumb a { color: #7dd3fc; text-decoration: none; }
+.pnd-crumb a:hover { text-decoration: underline; }
+.pnd-head h1 {
+  margin: 0 0 16px;
+  font-size: clamp(27px, 4vw, 38px);
+  line-height: 1.2;
+  letter-spacing: -0.022em;
+  font-weight: 740;
+}
+.pnd-ringkas {
+  margin: 0;
+  font-size: 17.5px;
+  line-height: 1.66;
+  color: #b6c0d4;
+}
+.pnd-tanggal {
+  margin: 18px 0 0;
+  font-size: 13px;
+  color: #7d8aa4;
+  font-family: var(--font-mono);
+}
+
+/* --- Isi artikel --- */
+.pnd-isi { margin-top: 34px; }
+.pnd-isi section + section { margin-top: 34px; }
+.pnd-isi h2 {
+  margin: 0 0 14px;
+  font-size: 21px;
+  line-height: 1.32;
+  letter-spacing: -0.015em;
+  font-weight: 680;
+  color: #f1f5ff;
+}
+.pnd-isi p {
+  margin: 0 0 15px;
+  font-size: 16.5px;
+  line-height: 1.78;
+  color: #ccd4e4;
+}
+.pnd-isi ul,
+.pnd-isi ol {
+  margin: 0 0 15px;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pnd-isi li {
+  font-size: 16.5px;
+  line-height: 1.72;
+  color: #ccd4e4;
+  padding-left: 4px;
+}
+.pnd-isi li::marker { color: #7dd3fc; font-weight: 600; }
+
+/* --- Daftar panduan di /panduan --- */
+.pnd-daftar {
+  list-style: none;
+  margin: 34px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.pnd-daftar a {
+  display: block;
+  padding: 20px 22px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 214, 0.2);
+  background: rgba(15, 22, 38, 0.66);
+  text-decoration: none;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+.pnd-daftar a:hover {
+  border-color: rgba(34, 211, 238, 0.5);
+  transform: translateY(-2px);
+}
+.pnd-daftar h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.38;
+  letter-spacing: -0.012em;
+  color: #f1f5ff;
+}
+.pnd-daftar p {
+  margin: 0 0 12px;
+  font-size: 15px;
+  line-height: 1.66;
+  color: #a6b1c7;
+}
+.pnd-baca { font-size: 14px; font-weight: 600; color: #7dd3fc; }
+
+/* --- Tautan panduan lain --- */
+.pnd-lain {
+  margin-top: 48px;
+  padding: 22px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 214, 0.18);
+  background: rgba(15, 22, 38, 0.5);
+}
+.pnd-lain h2 { margin: 0 0 14px; font-size: 16px; color: #c2cbdf; }
+.pnd-lain ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 11px; }
+.pnd-lain a { color: #7dd3fc; text-decoration: none; font-size: 15.5px; line-height: 1.55; }
+.pnd-lain a:hover { text-decoration: underline; }
+
+/* --- Kaki --- */
+.pnd-kaki {
+  margin-top: 46px;
+  padding-top: 28px;
+  border-top: 1px solid rgba(148, 163, 214, 0.18);
+}
+.pnd-kaki > p { margin: 0 0 18px; font-size: 15px; line-height: 1.68; color: #a6b1c7; }
+.pnd-kaki-aksi { display: flex; gap: 12px; flex-wrap: wrap; }
+.pnd-kaki-kecil { margin: 22px 0 0; font-size: 13px; line-height: 1.6; color: #77839b; }
+
+/* --- Blok panduan di halaman depan --- */
+.landing-panduan {
+  list-style: none;
+  margin: 28px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+  gap: 13px;
+}
+.landing-panduan a {
+  display: block;
+  height: 100%;
+  padding: 19px 20px;
+  border-radius: 13px;
+  border: 1px solid rgba(148, 163, 214, 0.18);
+  background: rgba(15, 22, 38, 0.6);
+  text-decoration: none;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+.landing-panduan a:hover {
+  border-color: rgba(34, 211, 238, 0.5);
+  transform: translateY(-2px);
+}
+.landing-panduan h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: #eef2fb;
+}
+.landing-panduan p { margin: 0; font-size: 14.5px; line-height: 1.62; color: #a0abc2; }
+
+@media (max-width: 620px) {
+  .pnd-inner { padding: 26px 20px 48px; }
+  .pnd-isi p, .pnd-isi li { font-size: 16px; }
+}
+
+/* --- Bar merek di halaman panduan ---
+   Pengunjung yang datang dari Google mendarat langsung di artikel, bukan di
+   halaman depan. Tanpa bar ini mereka tidak tahu situs siapa yang sedang
+   dibaca, dan nama "CakapCepat" tidak muncul konsisten di tiap halaman. */
+.pnd-bar {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 30px;
+}
+.pnd-bar-merek { display: flex; align-items: center; }
+.pnd-bar-merek img { height: 30px; width: auto; display: block; }
+.pnd-bar-nav { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+.pnd-bar-nav > a {
+  color: #b6c0d4;
+  text-decoration: none;
+  font-size: 14.5px;
+  font-weight: 500;
+}
+.pnd-bar-nav > a:hover { color: #7dd3fc; }
+.pnd-bar-nav > a.landing-nav-cta:hover { color: #fff; }

@@ -222,6 +222,10 @@ const publicDir = path.join(__dirname, "../public");
 if (fs.existsSync(publicDir)) {
   app.use(
     express.static(publicDir, {
+      // Sejak ada folder public/panduan/, express.static akan membalas 301 dari
+      // "/panduan" ke "/panduan/" karena mengira itu permintaan direktori.
+      // Halaman /panduan harus dijawab langsung, bukan dialihkan.
+      redirect: false,
       // Berkas di /assets/ namanya mengandung hash isi (index-a1b2c3.js) — aman
       // di-cache setahun. index.html TIDAK boleh di-cache, kalau tidak pengguna
       // tetap memuat versi lama setelah deploy.
@@ -256,16 +260,32 @@ if (fs.existsSync(publicDir)) {
     // statis yang bisa diambil siapa pun.
     const HALAMAN_PRERENDER: Record<string, string> = {
       "/": "index.html",
+      "/panduan": "panduan.html",
       "/privacy-policy": "privacy-policy.html",
       "/data-deletion": "data-deletion.html",
     };
-    const berkasPrerender = HALAMAN_PRERENDER[req.path];
+
+    // Artikel panduan: /panduan/<slug> -> public/panduan/<slug>.html.
+    // Slug-nya dibatasi huruf kecil, angka, dan tanda hubung — tanpa ini,
+    // "/panduan/../../etc/passwd" akan ikut dipetakan jadi jalur berkas.
+    let berkasPrerender = HALAMAN_PRERENDER[req.path];
+    if (!berkasPrerender) {
+      const cocok = /^\/panduan\/([a-z0-9-]{1,80})$/.exec(req.path);
+      if (cocok) berkasPrerender = path.join("panduan", `${cocok[1]}.html`);
+    }
+
     if (berkasPrerender) {
       const penuh = path.join(publicDir, berkasPrerender);
-      if (fs.existsSync(penuh)) {
+      // Pastikan hasil penggabungan benar-benar masih di dalam publicDir.
+      if (penuh.startsWith(publicDir + path.sep) && fs.existsSync(penuh)) {
         res.setHeader("Cache-Control", "no-cache");
         return res.sendFile(penuh);
       }
+      // Slug panduan yang tidak ada harus 404 sungguhan. Membalas cangkang
+      // dengan status 200 membuat mesin pencari mengira halamannya ada
+      // ("soft 404") dan itu menurunkan kepercayaan pada seluruh situs.
+      res.setHeader("X-Robots-Tag", "noindex");
+      return res.status(404).type("text/plain").send("404 Not Found");
     } else {
       res.setHeader("X-Robots-Tag", "noindex");
     }

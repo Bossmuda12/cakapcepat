@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { PANDUAN } from "./panduan/isi";
 import {
   HeroAurora,
   MockupChat,
@@ -127,6 +128,7 @@ export default function Landing() {
           <a href="#layanan">Layanan</a>
           <a href="#cara-kerja">Cara Kerja</a>
           <a href="#tentang">Tentang</a>
+          <Link to="/panduan">Panduan</Link>
         </nav>
         <Link className="landing-nav-cta" to="/masuk">
           Masuk
@@ -262,6 +264,25 @@ export default function Landing() {
           </div>
         </section>
 
+        <section className="landing-section" id="panduan">
+          <p className="landing-kicker">Panduan</p>
+          <h2 className="landing-h2">Catatan kerja yang bisa dipakai siapa pun</h2>
+          <p className="landing-section-lead">
+            Sebagian besar yang kami pelajari soal membalas chat, mencatat pesanan, dan menekan
+            retur tidak butuh alat kami untuk dijalankan. Kami tulis terbuka.
+          </p>
+          <ul className="landing-panduan">
+            {PANDUAN.map((a) => (
+              <li key={a.slug}>
+                <Link to={`/panduan/${a.slug}`}>
+                  <h3>{a.judul}</h3>
+                  <p>{a.ringkas}</p>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+
         <section className="landing-section" id="tentang">
           <p className="landing-kicker">Tentang</p>
           <h2 className="landing-h2">Dibangun oleh Taha Group</h2>
@@ -293,6 +314,7 @@ export default function Landing() {
           <nav className="landing-footer-links">
             <Link to="/masuk">Masuk</Link>
             <Link to="/register">Daftar</Link>
+            <Link to="/panduan">Panduan</Link>
             <Link to="/privacy-policy">Kebijakan Privasi</Link>
             <Link to="/data-deletion">Penghapusan Data</Link>
           </nav>
