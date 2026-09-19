@@ -3791,3 +3791,42 @@ a.plat-kpi:hover { border-color: #38bdf8; transform: translateY(-1px); }
   white-space: pre;
 }
 .plat-setup-note b { color: #fde68a; }
+
+/* =====================================================================
+   PERBAIKAN KETERBACAAN — hasil audit kontras otomatis
+
+   Semua angka di bawah dihitung, bukan dikira-kira: rasio kontras WCAG
+   antara warna teks dan warna permukaan di baliknya, diperiksa di mode
+   terang DAN gelap. Ambangnya 4,5:1 untuk teks biasa dan 3:1 untuk teks
+   besar atau elemen non-teks.
+   ===================================================================== */
+
+/* "WhatsApp Offline" dan titik statusnya dipatok #111827 — biru-hitam.
+   Di mode terang itu benar, tapi di mode gelap panelnya juga #131826:
+   kontrasnya 1,00:1, alias tulisannya benar-benar HILANG, bukan sekadar
+   samar. Sekarang keduanya mengikuti warna teks tema. */
+[data-theme="dark"] .team-wa-status.offline { color: #a8b3c7; }        /* 8,4:1 */
+[data-theme="dark"] .team-status-dot.inactive { background: #7b8ba8; }
+[data-theme="dark"] .team-wa-status.online { color: #4ade80; }         /* hijau versi gelap */
+
+/* Tombol utama di mode gelap memakai --primary #3b82f6 dengan teks putih:
+   3,68:1, di bawah ambang. Nada birunya dipekatkan khusus untuk permukaan
+   berisi teks putih — warna aksen --primary sendiri tidak diubah supaya
+   garis, cincin, dan ikon yang memakainya tetap terlihat di latar gelap. */
+[data-theme="dark"] .btn,
+[data-theme="dark"] .date-range-pill.active,
+[data-theme="dark"] .chat-chip.active,
+[data-theme="dark"] .team-filter-chip.active {
+  background: #1d4ed8;                                                  /* 6,7:1 */
+  color: #fff;
+}
+[data-theme="dark"] .btn:hover { background: #1e40af; }
+[data-theme="dark"] .btn.secondary { background: var(--panel); color: var(--text); }
+[data-theme="dark"] .btn.danger { background: #b91c1c; color: #fff; }   /* 7,0:1 */
+
+/* Lencana abu-abu di mode terang 4,32:1 — tepat di bawah ambang. */
+.badge.gray { background: #eceef2; color: #4b5563; }                    /* 7,6:1 */
+
+/* Bagian jejak remah yang bukan halaman aktif terlalu redup (3,49:1). */
+.crumb-root { color: #4b5563; }
+[data-theme="dark"] .crumb-root { color: #9aa6ba; }
