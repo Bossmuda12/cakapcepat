@@ -123,6 +123,10 @@ function PlatformLogin({ onMasuk }) {
 export default function PlatformApp() {
   const [admin, setAdmin] = useState(null);
   const [loading, setLoading] = useState(true);
+  /* Izin akses dukungan yang sedang berjalan — ditampilkan sebagai spanduk
+     permanen, supaya staf tidak pernah lupa bahwa dia sedang boleh melihat
+     data penjual dan bahwa setiap pembukaannya dicatat. */
+  const [izinAktif, setIzinAktif] = useState([]);
   const location = useLocation();
 
   const muat = useCallback(async () => {
@@ -145,6 +149,19 @@ export default function PlatformApp() {
   useEffect(() => {
     muat();
   }, [muat]);
+
+  useEffect(() => {
+    if (!admin) return undefined;
+    const ambil = () =>
+      platformApi
+        .get("/my-access")
+        .then((r) => setIzinAktif(r.aktif || []))
+        .catch(() => setIzinAktif([]));
+    ambil();
+    // Diperiksa berkala supaya spanduknya hilang sendiri begitu izinnya mati.
+    const t = setInterval(ambil, 60_000);
+    return () => clearInterval(t);
+  }, [admin, location.pathname]);
 
   if (loading) return <div className="plat-loading">Memuat panel...</div>;
   if (!admin) return <PlatformLogin onMasuk={(a) => setAdmin(a)} />;
@@ -183,6 +200,17 @@ export default function PlatformApp() {
       </aside>
 
       <main className="plat-main">
+        {izinAktif.length > 0 && (
+          <div className="plat-akses-aktif">
+            <Icon name="lihat" size={16} />
+            <span>
+              <b>Kamu sedang punya akses baca ke data penjual.</b>{" "}
+              {izinAktif.map((g) => `${g.organization_name} (tiket ${g.ticket_ref}, sampai ${new Date(g.expires_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })})`).join(" · ")}
+              {" — setiap percakapan yang kamu buka dicatat satu per satu."}
+            </span>
+          </div>
+        )}
+
         <div className="plat-warn">
           <Icon name="peringatan" size={15} />
           <span>

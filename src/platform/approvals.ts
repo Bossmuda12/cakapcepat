@@ -15,6 +15,7 @@ import { writePlatformAudit, type PlatformRequest } from "./auth";
  */
 export const JENIS_PERLU_DUA_MATA = {
   "tenant.disable": "Menonaktifkan penjual secara permanen",
+  "support_access.grant": "Memberi akses dukungan ke data penjual",
   "platform_admin.role_change": "Mengubah peran staf platform",
   "platform_admin.deactivate": "Menonaktifkan staf platform",
 } as const;
@@ -142,6 +143,12 @@ export async function putuskan(
        WHERE id = $4 AND status = 'pending'`,
       [req.platform!.platformAdminId, req.platform!.email, alasan, approvalId]
     );
+    if (p.type === "support_access.grant" && p.payload?.grantId) {
+      // Izinnya jangan menggantung sebagai 'pending' selamanya.
+      await pool.query("UPDATE platform_access_grants SET status = 'rejected' WHERE id = $1 AND status = 'pending'", [
+        p.payload.grantId,
+      ]);
+    }
     await writePlatformAudit({
       req,
       action: `approval.rejected:${p.type}`,

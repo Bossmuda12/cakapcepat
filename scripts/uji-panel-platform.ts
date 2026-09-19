@@ -372,6 +372,89 @@ async function buatStaf(email: string, password: string, role: string): Promise<
   const peranBaru = await one<{ role: string }>("SELECT role FROM platform_admins WHERE id = $1", [staf3[0].id]);
   ok("peran berubah SETELAH disetujui", peranBaru.role === "platform_owner", peranBaru.role);
 
+  console.log("\n== 8e. Akses dukungan berbatas waktu ==");
+  const { rows: orgS } = await pool.query(
+    "INSERT INTO organization (name) VALUES ($1) RETURNING id", [`Penjual Uji Dukungan ${RUN}`]
+  );
+  const orgSup = orgS[0].id;
+  // Percakapan berisi untuk dibaca.
+  const { rows: ktS } = await pool.query(
+    "INSERT INTO contacts (organization_id, wa_number, name) VALUES ($1,$2,$3) RETURNING id",
+    [orgSup, "+60111222333", "Pelanggan Dukungan"]
+  );
+  const { rows: chS } = await pool.query(
+    "INSERT INTO whatsapp_channels (organization_id, label, connection_type) VALUES ($1,'CS','qr') RETURNING id",
+    [orgSup]
+  );
+  const { rows: cvS } = await pool.query(
+    "INSERT INTO conversations (organization_id, contact_id, channel_id, status) VALUES ($1,$2,$3,'open') RETURNING id",
+    [orgSup, ktS[0].id, chS[0].id]
+  );
+  await pool.query(
+    `INSERT INTO messages (organization_id, conversation_id, direction, content_type, content, sender_type)
+     VALUES ($1,$2,'inbound','text',$3,'customer')`,
+    [orgSup, cvS[0].id, JSON.stringify({ body: `ISI-CHAT-RAHASIA-${RUN}` })]
+  );
+
+  const tanpaIzin = await req("GET", `/platform/tenants/${orgSup}/conversations`, { token: tokenOwnerBaru });
+  ok("tanpa izin, isi chat penjual DITOLAK", tanpaIzin.status === 403, String(tanpaIzin.status));
+  ok("penolakannya menjelaskan harus minta izin", tanpaIzin.body?.needsAccessGrant === true);
+
+  const alasanPendekIzin = await req("POST", `/platform/tenants/${orgSup}/access-request`, {
+    token: tokenOwnerBaru,
+    body: { ticketRef: "T-1", purpose: "cek", hours: 2 },
+  });
+  ok("tujuan terlalu pendek ditolak", alasanPendekIzin.status === 400, String(alasanPendekIzin.status));
+
+  const terlaluLama = await req("POST", `/platform/tenants/${orgSup}/access-request`, {
+    token: tokenOwnerBaru,
+    body: { ticketRef: "T-1", purpose: "Penjual melapor AI menjawab harga yang salah.", hours: 72 },
+  });
+  ok("durasi lebih dari 8 jam ditolak", terlaluLama.status === 400, String(terlaluLama.status));
+
+  const mintaIzin = await req("POST", `/platform/tenants/${orgSup}/access-request`, {
+    token: tokenOwnerBaru,
+    body: { ticketRef: "TIKET-991", purpose: "Penjual melapor AI menjawab harga yang salah, perlu lihat chatnya.", hours: 2 },
+  });
+  ok("permintaan akses dibuat, belum berlaku", mintaIzin.status === 202, String(mintaIzin.status));
+
+  const masihDitolak = await req("GET", `/platform/tenants/${orgSup}/conversations`, { token: tokenOwnerBaru });
+  ok("sebelum disetujui, tetap DITOLAK", masihDitolak.status === 403, String(masihDitolak.status));
+
+  const setujuIzinSendiri = await req("POST", `/platform/approvals/${mintaIzin.body.approvalId}/decision`, {
+    token: tokenOwnerBaru,
+    body: { decision: "approve", reason: "Mencoba menyetujui permintaan akses saya sendiri." },
+  });
+  ok("pemohon tidak bisa menyetujui aksesnya sendiri", setujuIzinSendiri.status === 403, String(setujuIzinSendiri.status));
+
+  const setujuIzin = await req("POST", `/platform/approvals/${mintaIzin.body.approvalId}/decision`, {
+    token: tokenOwner2,
+    body: { decision: "approve", reason: "Tiket TIKET-991 diperiksa, akses dukungan disetujui." },
+  });
+  ok("staf kedua menyetujui akses", setujuIzin.status === 200, JSON.stringify(setujuIzin.body));
+
+  const bacaChat = await req("GET", `/platform/tenants/${orgSup}/conversations`, { token: tokenOwnerBaru });
+  ok("setelah disetujui, percakapan bisa dibaca", bacaChat.status === 200, String(bacaChat.status));
+  ok("izinnya punya masa berlaku", Boolean(bacaChat.body?.grant?.expiresAt));
+
+  const pesan = await req("GET", `/platform/tenants/${orgSup}/conversations/${cvS[0].id}/messages`, { token: tokenOwnerBaru });
+  ok("isi pesan bisa dibaca di bawah izin", pesan.status === 200 && JSON.stringify(pesan.body).includes(`ISI-CHAT-RAHASIA-${RUN}`));
+
+  // Staf LAIN tanpa izin tetap tidak bisa.
+  const stafLain = await req("GET", `/platform/tenants/${orgSup}/conversations`, { token: tokenOwner2 });
+  ok("staf lain tanpa izin sendiri tetap DITOLAK", stafLain.status === 403, String(stafLain.status));
+
+  const izinSaya = await req("GET", "/platform/my-access", { token: tokenOwnerBaru });
+  const izinAktif = (izinSaya.body?.aktif ?? [])[0];
+  ok("izin muncul di daftar milik saya", Boolean(izinAktif));
+  ok("jumlah pembacaan ikut dihitung", Number(izinAktif?.reads_count) >= 2, String(izinAktif?.reads_count));
+
+  const cabut = await req("POST", `/platform/access-grants/${izinAktif.id}/revoke`, { token: tokenOwnerBaru, body: {} });
+  ok("izin bisa dicabut lebih awal", cabut.status === 200, String(cabut.status));
+
+  const sesudahCabut = await req("GET", `/platform/tenants/${orgSup}/conversations`, { token: tokenOwnerBaru });
+  ok("setelah dicabut, langsung DITOLAK lagi", sesudahCabut.status === 403, String(sesudahCabut.status));
+
   console.log("\n== 9. Semuanya tercatat di audit ==");
   const audit = await req("GET", "/platform/audit?limit=120", { token: tokenOwner2 });
   const aksi = (audit.body?.items ?? []).map((a: any) => a.action);
@@ -381,6 +464,10 @@ async function buatStaf(email: string, password: string, role: string): Promise<
   ok("pemulihan tercatat", aksi.includes("tenant.reactivate"));
 
   ok("penggantian password tercatat", aksi.includes("auth.password_changed"));
+  ok("tiap pembacaan data penjual tercatat sendiri",
+     aksi.filter((a: string) => a.startsWith("support_access.read:")).length >= 2,
+     JSON.stringify(aksi.filter((a: string) => a.startsWith("support_access."))));
+  ok("percobaan menyetujui permintaan sendiri tercatat", aksi.includes("approval.self_decision_blocked"));
   const auditTeks = JSON.stringify(audit.body);
   ok("password TIDAK ikut tersimpan di audit", !auditTeks.includes(pwBaru) && !auditTeks.includes(pwOwner));
 

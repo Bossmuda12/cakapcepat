@@ -1171,3 +1171,67 @@ CREATE INDEX IF NOT EXISTS idx_platform_approvals_target ON platform_approvals(t
 -- disetujui oleh orang yang tidak membaca teliti.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_approvals_satu_aktif
   ON platform_approvals(type, target_id) WHERE status = 'pending';
+
+-- ############################################################################
+-- SADM — AKSES DUKUNGAN BERBATAS WAKTU
+--
+-- Panel Superadmin sengaja TIDAK bisa membaca isi percakapan penjual. Itu
+-- aman, tapi berarti tidak ada cara sah membantu penjual yang melapor
+-- "AI-nya salah jawab" — stafnya harus bisa melihat chat yang dimaksud.
+--
+-- Jawabannya bukan membuka aksesnya permanen, tapi memberi izin yang:
+--   - punya alasan tertulis dan nomor tiket,
+--   - disetujui orang lain (bukan pemohon),
+--   - berlaku untuk SATU penjual saja,
+--   - mati sendiri setelah beberapa jam,
+--   - dan setiap pembacaan di bawahnya dicatat satu per satu.
+--
+-- Yang dicatat bukan cuma "pernah diberi akses", tapi setiap kali data itu
+-- benar-benar dibuka — supaya kalau ada yang menyalahgunakan, jejaknya ada.
+-- ############################################################################
+
+CREATE TABLE IF NOT EXISTS platform_access_grants (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  platform_admin_id UUID NOT NULL REFERENCES platform_admins(id) ON DELETE CASCADE,
+  admin_email       TEXT,
+  organization_id   UUID NOT NULL REFERENCES organization(id) ON DELETE CASCADE,
+  organization_name TEXT,
+  ticket_ref        TEXT NOT NULL,
+  purpose           TEXT NOT NULL,
+  -- Hanya baca. Menulis atas nama penjual adalah hal yang sama sekali berbeda
+  -- dan tidak dibuka di sini.
+  scope             TEXT NOT NULL DEFAULT 'read_only',
+  status            TEXT NOT NULL DEFAULT 'pending', -- pending | active | expired | revoked | rejected
+  approved_by       UUID REFERENCES platform_admins(id) ON DELETE SET NULL,
+  approved_email    TEXT,
+  approved_at       TIMESTAMPTZ,
+  starts_at         TIMESTAMPTZ,
+  expires_at        TIMESTAMPTZ,
+  revoked_at        TIMESTAMPTZ,
+  revoked_by        UUID REFERENCES platform_admins(id) ON DELETE SET NULL,
+  reads_count       INT NOT NULL DEFAULT 0,
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $sadm$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'platform_access_grants_status_check') THEN
+    ALTER TABLE platform_access_grants ADD CONSTRAINT platform_access_grants_status_check
+      CHECK (status IN ('pending','active','expired','revoked','rejected'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'platform_access_grants_scope_check') THEN
+    ALTER TABLE platform_access_grants ADD CONSTRAINT platform_access_grants_scope_check
+      CHECK (scope = 'read_only');
+  END IF;
+END
+$sadm$;
+
+CREATE INDEX IF NOT EXISTS idx_access_grants_aktif
+  ON platform_access_grants(platform_admin_id, organization_id, status);
+CREATE INDEX IF NOT EXISTS idx_access_grants_org ON platform_access_grants(organization_id, created_at DESC);
+
+-- Satu izin aktif/menunggu per (staf, penjual) — supaya tidak menumpuk izin
+-- kembar yang masa berlakunya saling menyambung tanpa ditinjau ulang.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_access_grants_satu_aktif
+  ON platform_access_grants(platform_admin_id, organization_id)
+  WHERE status IN ('pending','active');

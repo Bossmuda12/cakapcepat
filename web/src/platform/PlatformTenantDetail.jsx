@@ -209,6 +209,8 @@ export default function PlatformTenantDetail({ izin }) {
         )}
       </section>
 
+      <AksesDukungan orgId={id} orgNama={org.name} />
+
       <section className="panel">
         <h2>Pengguna ({data.users.length})</h2>
         <div className="table-scroll">
@@ -305,5 +307,164 @@ export default function PlatformTenantDetail({ izin }) {
         )}
       </section>
     </>
+  );
+}
+
+
+/**
+ * Membaca isi percakapan penjual butuh izin yang masih berlaku, disetujui
+ * staf lain, dan mati sendiri. Bagian ini menyatukan permintaannya dengan
+ * pembacanya, supaya jelas bahwa yang satu memang syarat bagi yang lain.
+ */
+function AksesDukungan({ orgId, orgNama }) {
+  const [izin, setIzin] = useState(null);
+  const [form, setForm] = useState({ ticketRef: "", purpose: "", hours: 2 });
+  const [bukaForm, setBukaForm] = useState(false);
+  const [percakapan, setPercakapan] = useState(null);
+  const [pesan, setPesan] = useState(null);
+  const [error, setError] = useState("");
+  const [sukses, setSukses] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const muatIzin = useCallback(() => {
+    platformApi
+      .get("/my-access")
+      .then((r) => setIzin((r.aktif || []).find((g) => g.organization_id === orgId) || null))
+      .catch(() => setIzin(null));
+  }, [orgId]);
+  useEffect(muatIzin, [muatIzin]);
+
+  const ajukan = async (e) => {
+    e.preventDefault();
+    setError(""); setSukses(""); setBusy(true);
+    try {
+      const r = await platformApi.post(`/tenants/${orgId}/access-request`, form);
+      setSukses(r.message);
+      setBukaForm(false);
+      setForm({ ticketRef: "", purpose: "", hours: 2 });
+    } catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  };
+
+  const bukaPercakapan = async () => {
+    setError(""); setPesan(null);
+    try {
+      const r = await platformApi.get(`/tenants/${orgId}/conversations`);
+      setPercakapan(r.items);
+    } catch (err) { setError(err.message); muatIzin(); }
+  };
+
+  const bukaPesan = async (convId) => {
+    setError("");
+    try {
+      const r = await platformApi.get(`/tenants/${orgId}/conversations/${convId}/messages`);
+      setPesan({ convId, items: r.items });
+    } catch (err) { setError(err.message); muatIzin(); }
+  };
+
+  const cabut = async () => {
+    try {
+      await platformApi.post(`/access-grants/${izin.id}/revoke`, {});
+      setIzin(null); setPercakapan(null); setPesan(null);
+      setSukses("Izin dicabut.");
+    } catch (err) { setError(err.message); }
+  };
+
+  return (
+    <section className="panel">
+      <h2>Akses dukungan</h2>
+      {error && <div className="error-box">{error}</div>}
+      {sukses && <div className="success-box">{sukses}</div>}
+
+      {!izin ? (
+        <>
+          <p className="field-hint" style={{ marginTop: 0 }}>
+            Panel ini tidak bisa membaca percakapan penjual. Kalau perlu melihatnya untuk menangani
+            laporan, ajukan izin: harus punya nomor tiket dan tujuan, disetujui staf platform lain,
+            berlaku maksimal 8 jam, dan setiap percakapan yang dibuka dicatat satu per satu.
+          </p>
+          <button type="button" className="act-btn" onClick={() => setBukaForm((v) => !v)}>
+            {bukaForm ? "Tutup" : "Ajukan izin akses"}
+          </button>
+
+          {bukaForm && (
+            <form className="plat-confirm" onSubmit={ajukan} style={{ borderColor: "rgba(125,211,252,0.34)", background: "rgba(125,211,252,0.05)" }}>
+              <div className="field">
+                <label htmlFor="tk">Nomor tiket / laporan</label>
+                <input id="tk" value={form.ticketRef} onChange={(e) => setForm((f) => ({ ...f, ticketRef: e.target.value }))} placeholder="mis. WA-2291" required />
+              </div>
+              <div className="field">
+                <label htmlFor="tj">Tujuan (minimal 15 karakter)</label>
+                <textarea id="tj" rows={3} value={form.purpose} onChange={(e) => setForm((f) => ({ ...f, purpose: e.target.value }))}
+                  placeholder="Apa yang perlu diperiksa, dan kenapa harus melihat isi chatnya?" required />
+              </div>
+              <div className="field" style={{ maxWidth: 200 }}>
+                <label htmlFor="jm">Berlaku berapa jam</label>
+                <select id="jm" value={form.hours} onChange={(e) => setForm((f) => ({ ...f, hours: Number(e.target.value) }))}>
+                  {[1, 2, 4, 8].map((h) => <option key={h} value={h}>{h} jam</option>)}
+                </select>
+                <small className="field-hint">Maksimal 8 jam — izin berhari-hari praktis sama dengan akses permanen.</small>
+              </div>
+              <button className="btn" type="submit" disabled={busy || form.purpose.trim().length < 15}>
+                {busy ? "Mengirim..." : "Ajukan untuk disetujui staf lain"}
+              </button>
+            </form>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="plat-akses-aktif" style={{ marginBottom: 14 }}>
+            <Icon name="lihat" size={16} />
+            <span>
+              Izin aktif untuk <b>{orgNama}</b> — tiket {izin.ticket_ref}, berlaku sampai{" "}
+              {new Date(izin.expires_at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}.
+              Sudah {izin.reads_count} kali membuka data.
+            </span>
+          </div>
+          <div className="plat-approval-aksi">
+            <button type="button" className="act-btn" onClick={bukaPercakapan}>Lihat percakapan</button>
+            <button type="button" className="act-btn act-danger" onClick={cabut}>Cabut izin sekarang</button>
+          </div>
+
+          {percakapan && (
+            <div className="table-scroll" style={{ marginTop: 16 }}>
+              {percakapan.length === 0 ? (
+                <p className="empty-state">Penjual ini belum punya percakapan.</p>
+              ) : (
+                <table>
+                  <thead><tr><th>Kontak</th><th>Nomor</th><th>Status</th><th>Pesan terakhir</th><th></th></tr></thead>
+                  <tbody>
+                    {percakapan.map((c) => (
+                      <tr key={c.id}>
+                        <td>{c.contact_name ?? "-"}</td>
+                        <td className="plat-dim">{c.channel_label ?? "-"}</td>
+                        <td>{c.status}{c.needs_attention ? " · perlu perhatian" : ""}</td>
+                        <td className="plat-dim">{c.last_message_at ? new Date(c.last_message_at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" }) : "-"}</td>
+                        <td><button type="button" className="act-btn" onClick={() => bukaPesan(c.id)}>Buka</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {pesan && (
+            <div className="plat-chat" style={{ marginTop: 16 }}>
+              {pesan.items.map((m) => (
+                <div key={m.id} className={`plat-bubble ${m.direction === "inbound" ? "masuk" : "keluar"}`}>
+                  <span className="plat-bubble-meta">
+                    {m.direction === "inbound" ? "Pelanggan" : m.sender_type === "ai" ? "AI" : "CS"} ·{" "}
+                    {new Date(m.created_at).toLocaleString("id-ID", { dateStyle: "short", timeStyle: "short" })}
+                  </span>
+                  <div>{m.content?.body ?? `(${m.content_type})`}</div>
+                </div>
+              ))}
+              {pesan.items.length === 0 && <p className="empty-state">Belum ada pesan.</p>}
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }

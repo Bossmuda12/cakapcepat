@@ -20,6 +20,12 @@ import {
   JENIS_PERLU_DUA_MATA,
   type JenisPersetujuan,
 } from "./approvals";
+import {
+  izinAktifUntuk,
+  wajibPunyaIzin,
+  catatPembacaan,
+  kedaluwarsakanIzin,
+} from "./accessGrants";
 
 export const platformRouter = Router();
 
@@ -513,6 +519,23 @@ platformRouter.post(
           return { ok: true, pesan: `Staf ${rows[0].email} diperbarui.` };
         }
 
+        if (baris.type === "support_access.grant") {
+          const jam = Number(baris.payload.hours) || 2;
+          const { rows } = await pool.query(
+            `UPDATE platform_access_grants
+             SET status = 'active', approved_by = $1, approved_email = $2, approved_at = now(),
+                 starts_at = now(), expires_at = now() + ($3 || ' hours')::interval
+             WHERE id = $4 AND status = 'pending'
+             RETURNING admin_email, organization_name, expires_at`,
+            [req.platform!.platformAdminId, req.platform!.email, String(jam), baris.payload.grantId]
+          );
+          if (!rows[0]) return { ok: false, pesan: "Izin sudah dicabut atau tidak lagi menunggu persetujuan" };
+          return {
+            ok: true,
+            pesan: `Akses ${rows[0].admin_email} ke ${rows[0].organization_name} berlaku sampai ${new Date(rows[0].expires_at).toLocaleString("id-ID")}.`,
+          };
+        }
+
         return { ok: false, pesan: `Jenis permintaan "${baris.type}" tidak dikenali` };
       }
     );
@@ -533,11 +556,167 @@ platformRouter.post(
     if (!rows[0]) {
       return res.status(404).json({ error: "Permintaan tidak ditemukan, sudah diputuskan, atau bukan milikmu" });
     }
+    if (rows[0].type === "support_access.grant") {
+      await pool.query(
+        `UPDATE platform_access_grants SET status = 'revoked', revoked_at = now()
+         WHERE organization_id = $1 AND platform_admin_id = $2 AND status = 'pending'`,
+        [rows[0].target_id, req.platform!.platformAdminId]
+      );
+    }
     await writePlatformAudit({
       req, action: `approval.cancelled:${rows[0].type}`,
       targetType: rows[0].target_type, targetId: rows[0].target_id,
     });
     res.json({ ok: true, message: "Permintaan dibatalkan." });
+  }
+);
+
+// ============================================================================
+// AKSES DUKUNGAN BERBATAS WAKTU
+// ============================================================================
+const izinSchema = z.object({
+  ticketRef: z.string().trim().min(3, "Nomor tiket/laporan wajib diisi").max(80),
+  purpose: z.string().trim().min(15, "Jelaskan tujuannya, minimal 15 karakter").max(1000),
+  // Maksimal 8 jam. Izin yang berlaku berhari-hari praktis sama dengan akses
+  // permanen yang kebetulan punya tanggal kedaluwarsa.
+  hours: z.coerce.number().int().min(1).max(8).default(2),
+});
+
+platformRouter.post(
+  "/platform/tenants/:id/access-request",
+  requirePlatformAuth,
+  requirePermission(PERMISSIONS.TENANTS_READ),
+  async (req: PlatformRequest, res) => {
+    const id = req.params.id;
+    if (!z.string().uuid().safeParse(id).success) return res.status(400).json({ error: "ID tidak valid" });
+    const parsed = izinSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { rows: org } = await pool.query("SELECT name FROM organization WHERE id = $1", [id]);
+    if (!org[0]) return res.status(404).json({ error: "Organisasi tidak ditemukan" });
+
+    await kedaluwarsakanIzin();
+    const { rows } = await pool.query(
+      `INSERT INTO platform_access_grants
+         (platform_admin_id, admin_email, organization_id, organization_name, ticket_ref, purpose)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [req.platform!.platformAdminId, req.platform!.email, id, org[0].name,
+       parsed.data.ticketRef, parsed.data.purpose]
+    );
+    if (!rows[0]) {
+      return res.status(409).json({ error: "Kamu sudah punya izin aktif atau permintaan yang menunggu untuk penjual ini" });
+    }
+
+    const hasil = await buatPermintaan({
+      req,
+      type: "support_access.grant",
+      targetType: "organization",
+      targetId: id,
+      targetLabel: org[0].name,
+      payload: { grantId: rows[0].id, hours: parsed.data.hours, scope: "read_only" },
+      reasonCode: parsed.data.ticketRef,
+      reasonText: parsed.data.purpose,
+    });
+    if (!hasil.dibuat) {
+      await pool.query("DELETE FROM platform_access_grants WHERE id = $1", [rows[0].id]);
+      return res.status(409).json({ error: "Sudah ada permintaan akses untuk penjual ini yang menunggu persetujuan" });
+    }
+
+    res.status(202).json({
+      ok: true,
+      needsSecondApproval: true,
+      approvalId: hasil.permintaan.id,
+      message:
+        "Permintaan akses dicatat. Harus disetujui staf platform LAIN sebelum berlaku, dan otomatis mati setelah masa berlakunya habis.",
+    });
+  }
+);
+
+/** Izin milik saya (untuk spanduk dan daftar di layar). */
+platformRouter.get("/platform/my-access", requirePlatformAuth, async (req: PlatformRequest, res) => {
+  await kedaluwarsakanIzin();
+  const { rows } = await pool.query(
+    `SELECT id, organization_id, organization_name, ticket_ref, purpose, status,
+            starts_at, expires_at, reads_count, created_at
+     FROM platform_access_grants
+     WHERE platform_admin_id = $1
+     ORDER BY created_at DESC LIMIT 30`,
+    [req.platform!.platformAdminId]
+  );
+  res.json({ items: rows, aktif: rows.filter((r) => r.status === "active") });
+});
+
+/** Cabut izin lebih awal — pemiliknya sendiri, atau siapa pun yang boleh mengelola staf. */
+platformRouter.post("/platform/access-grants/:id/revoke", requirePlatformAuth, async (req: PlatformRequest, res) => {
+  const bolehCabutMilikOrang = req.platform!.permissions.has(PERMISSIONS.ADMINS_MANAGE);
+  const { rows } = await pool.query(
+    `UPDATE platform_access_grants
+     SET status = 'revoked', revoked_at = now(), revoked_by = $1
+     WHERE id = $2 AND status IN ('active','pending')
+       AND ($3 = true OR platform_admin_id = $1)
+     RETURNING id, organization_id, admin_email`,
+    [req.platform!.platformAdminId, req.params.id, bolehCabutMilikOrang]
+  );
+  if (!rows[0]) return res.status(404).json({ error: "Izin tidak ditemukan, sudah berakhir, atau bukan milikmu" });
+
+  await writePlatformAudit({
+    req, action: "support_access.revoked",
+    targetType: "organization", targetId: rows[0].organization_id,
+    detail: { grantId: rows[0].id, milik: rows[0].admin_email },
+  });
+  res.json({ ok: true, message: "Izin akses dicabut." });
+});
+
+/**
+ * DATA ISI penjual — hanya bisa dibuka dengan izin yang masih berlaku, dan
+ * setiap pembukaan dicatat satu per satu.
+ */
+platformRouter.get(
+  "/platform/tenants/:id/conversations",
+  requirePlatformAuth,
+  requirePermission(PERMISSIONS.TENANTS_READ),
+  async (req: PlatformRequest, res) => {
+    const id = req.params.id;
+    if (!z.string().uuid().safeParse(id).success) return res.status(400).json({ error: "ID tidak valid" });
+    const izin = await wajibPunyaIzin(req, res, id);
+    if (!izin) return;
+
+    const { rows } = await pool.query(
+      `SELECT c.id, c.status, c.last_message_at, c.needs_attention, c.ai_paused,
+              ct.name AS contact_name, wc.label AS channel_label
+       FROM conversations c
+       JOIN contacts ct ON ct.id = c.contact_id
+       LEFT JOIN whatsapp_channels wc ON wc.id = c.channel_id
+       WHERE c.organization_id = $1
+       ORDER BY c.last_message_at DESC NULLS LAST
+       LIMIT 50`,
+      [id]
+    );
+    await catatPembacaan(req, izin, "conversations", { jumlah: rows.length });
+    res.json({ items: rows, grant: { expiresAt: izin.expires_at, ticketRef: izin.ticket_ref } });
+  }
+);
+
+platformRouter.get(
+  "/platform/tenants/:id/conversations/:convId/messages",
+  requirePlatformAuth,
+  requirePermission(PERMISSIONS.TENANTS_READ),
+  async (req: PlatformRequest, res) => {
+    const id = req.params.id;
+    const izin = await wajibPunyaIzin(req, res, id);
+    if (!izin) return;
+
+    const { rows } = await pool.query(
+      `SELECT m.id, m.direction, m.sender_type, m.content, m.content_type, m.created_at
+       FROM messages m
+       WHERE m.conversation_id = $1 AND m.organization_id = $2
+       ORDER BY m.created_at ASC LIMIT 200`,
+      [req.params.convId, id]
+    );
+    await catatPembacaan(req, izin, "messages", { conversationId: req.params.convId, jumlah: rows.length });
+    res.json({ items: rows, grant: { expiresAt: izin.expires_at, ticketRef: izin.ticket_ref } });
   }
 );
 

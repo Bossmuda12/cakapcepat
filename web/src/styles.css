@@ -3867,3 +3867,23 @@ a.plat-kpi:hover { border-color: #38bdf8; transform: translateY(-1px); }
   font-size: 12.5px; color: #fde68a; line-height: 1.5;
 }
 .plat-approval-blokir svg { flex-shrink: 0; }
+
+/* --- Spanduk & pembaca akses dukungan --- */
+.plat-akses-aktif {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 15px; border-radius: 10px; margin-bottom: 14px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.42);
+  color: #bae6fd; font-size: 12.5px; line-height: 1.55;
+}
+.plat-akses-aktif svg { flex-shrink: 0; margin-top: 1px; }
+.plat-akses-aktif b { color: #e0f2fe; }
+.plat-chat { display: flex; flex-direction: column; gap: 9px; max-height: 420px; overflow-y: auto; padding-right: 4px; }
+.plat-bubble {
+  max-width: 76%; padding: 9px 13px; border-radius: 12px;
+  font-size: 13.5px; line-height: 1.55;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+}
+.plat-bubble.masuk { align-self: flex-start; background: rgba(255, 255, 255, 0.05); color: #e6ebf7; }
+.plat-bubble.keluar { align-self: flex-end; background: rgba(56, 189, 248, 0.12); color: #e0f2fe; }
+.plat-bubble-meta { display: block; font-size: 10.5px; color: #7b8ba8; margin-bottom: 4px; }
