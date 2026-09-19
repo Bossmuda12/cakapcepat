@@ -55,6 +55,11 @@ async function req(
   return { status: res.status, body };
 }
 
+async function one<T = any>(sql: string, params: any[] = []): Promise<T> {
+  const { rows } = await pool.query(sql, params);
+  return rows[0] as T;
+}
+
 async function buatStaf(email: string, password: string, role: string): Promise<string> {
   const hash = await bcrypt.hash(password, 10);
   const { rows } = await pool.query(
@@ -274,8 +279,101 @@ async function buatStaf(email: string, password: string, role: string): Promise<
   });
   ok("peran readonly pun boleh ganti password sendiri", auditorGanti.status === 200, String(auditorGanti.status));
 
+  console.log("\n== 8c. Persetujuan dua-mata (four-eyes) ==");
+  // Staf kedua dengan izin penuh, untuk jadi penyetuju.
+  const emailOwner2 = `owner2-${RUN}@platform.test`;
+  await buatStaf(emailOwner2, pwOwner, "platform_owner");
+  const masuk2 = await req("POST", "/platform/login", { body: { email: emailOwner2, password: pwOwner } });
+  const tokenOwner2: string = masuk2.body.token;
+
+  // tokenOwner sudah diganti passwordnya di 8b — ambil sesi baru.
+  const masukLagi = await req("POST", "/platform/login", { body: { email: emailOwner, password: pwBaru } });
+  const tokenOwnerBaru: string = masukLagi.body.token;
+
+  const { rows: orgD } = await pool.query(
+    "INSERT INTO organization (name) VALUES ($1) RETURNING id",
+    [`Penjual Uji Nonaktif ${RUN}`]
+  );
+  const orgDisable = orgD[0].id;
+
+  const minta = await req("POST", `/platform/tenants/${orgDisable}/enforcement`, {
+    token: tokenOwnerBaru,
+    body: {
+      action: "disable",
+      reasonCode: "uji-dua-mata",
+      reasonText: "Permintaan menonaktifkan untuk menguji persetujuan dua-mata.",
+      expectedStatus: "active",
+    },
+  });
+  ok("nonaktifkan TIDAK langsung jalan, jadi permintaan", minta.status === 202, String(minta.status));
+  ok("dijawab butuh persetujuan kedua", minta.body?.needsSecondApproval === true);
+  const approvalId = minta.body?.approvalId;
+
+  const masihAktif = await one<{ status: string }>("SELECT status FROM organization WHERE id = $1", [orgDisable]);
+  ok("organisasi BELUM dinonaktifkan sebelum disetujui", masihAktif.status === "active", masihAktif.status);
+
+  const setujuSendiri = await req("POST", `/platform/approvals/${approvalId}/decision`, {
+    token: tokenOwnerBaru,
+    body: { decision: "approve", reason: "Mencoba menyetujui permintaan saya sendiri." },
+  });
+  ok("pemohon TIDAK bisa menyetujui permintaannya sendiri", setujuSendiri.status === 403, String(setujuSendiri.status));
+
+  const masihAktif2 = await one<{ status: string }>("SELECT status FROM organization WHERE id = $1", [orgDisable]);
+  ok("organisasi tetap aktif setelah percobaan itu", masihAktif2.status === "active", masihAktif2.status);
+
+  const kembar = await req("POST", `/platform/tenants/${orgDisable}/enforcement`, {
+    token: tokenOwnerBaru,
+    body: { action: "disable", reasonCode: "uji", reasonText: "Permintaan kembar untuk sasaran yang sama.", expectedStatus: "active" },
+  });
+  ok("permintaan kembar untuk sasaran sama ditolak", kembar.status === 409, String(kembar.status));
+
+  const alasanPendek = await req("POST", `/platform/approvals/${approvalId}/decision`, {
+    token: tokenOwner2,
+    body: { decision: "approve", reason: "ok" },
+  });
+  ok("alasan keputusan terlalu pendek ditolak", alasanPendek.status === 400, String(alasanPendek.status));
+
+  const setujuOrangKedua = await req("POST", `/platform/approvals/${approvalId}/decision`, {
+    token: tokenOwner2,
+    body: { decision: "approve", reason: "Diperiksa dan disetujui oleh staf kedua dalam pengujian." },
+  });
+  ok("orang KEDUA bisa menyetujui", setujuOrangKedua.status === 200, JSON.stringify(setujuOrangKedua.body));
+
+  const sesudahNonaktif = await one<{ status: string }>("SELECT status FROM organization WHERE id = $1", [orgDisable]);
+  ok("organisasi baru dinonaktifkan SETELAH disetujui", sesudahNonaktif.status === "disabled", sesudahNonaktif.status);
+
+  const duaKali = await req("POST", `/platform/approvals/${approvalId}/decision`, {
+    token: tokenOwner2,
+    body: { decision: "approve", reason: "Mencoba menyetujui permintaan yang sudah diputuskan." },
+  });
+  ok("permintaan yang sudah diputuskan tidak bisa diputuskan lagi", duaKali.status === 409, String(duaKali.status));
+
+  const daftar = await req("GET", "/platform/approvals?status=approved", { token: tokenOwner2 });
+  const barisA = (daftar.body?.items ?? []).find((a: any) => a.id === approvalId);
+  ok("permintaan tercatat lengkap dengan pemohon dan penyetuju",
+     barisA?.requested_email === emailOwner && barisA?.decided_email === emailOwner2,
+     JSON.stringify({ p: barisA?.requested_email, s: barisA?.decided_email }));
+
+  console.log("\n== 8d. Perubahan staf platform juga dua-mata ==");
+  const { rows: staf3 } = await pool.query("SELECT id FROM platform_admins WHERE email = $1", [emailAuditor]);
+  const ubahPeran = await req("PATCH", `/platform/admins/${staf3[0].id}`, {
+    token: tokenOwnerBaru,
+    body: { role: "platform_owner" },
+  });
+  ok("menaikkan peran staf jadi permintaan, bukan langsung", ubahPeran.status === 202, String(ubahPeran.status));
+  const peranSekarang = await one<{ role: string }>("SELECT role FROM platform_admins WHERE id = $1", [staf3[0].id]);
+  ok("peran BELUM berubah sebelum disetujui", peranSekarang.role === "readonly_auditor", peranSekarang.role);
+
+  const setujuPeran = await req("POST", `/platform/approvals/${ubahPeran.body.approvalId}/decision`, {
+    token: tokenOwner2,
+    body: { decision: "approve", reason: "Disetujui staf kedua dalam pengujian kenaikan peran." },
+  });
+  ok("staf kedua menyetujui kenaikan peran", setujuPeran.status === 200, JSON.stringify(setujuPeran.body));
+  const peranBaru = await one<{ role: string }>("SELECT role FROM platform_admins WHERE id = $1", [staf3[0].id]);
+  ok("peran berubah SETELAH disetujui", peranBaru.role === "platform_owner", peranBaru.role);
+
   console.log("\n== 9. Semuanya tercatat di audit ==");
-  const audit = await req("GET", "/platform/audit?limit=50", { token: tokenOwner });
+  const audit = await req("GET", "/platform/audit?limit=120", { token: tokenOwner2 });
   const aksi = (audit.body?.items ?? []).map((a: any) => a.action);
   ok("audit bisa dibaca", audit.status === 200);
   ok("login tercatat", aksi.includes("auth.login"));
@@ -291,7 +389,7 @@ async function buatStaf(email: string, password: string, role: string): Promise<
   ok("identitas pelaku ikut tersimpan", barisSuspend?.actor_email === emailOwner);
 
   console.log("\n== 10. Panel tidak mengambil isi chat atau kredensial ==");
-  const detail = await req("GET", `/platform/tenants/${orgId}`, { token: tokenOwner });
+  const detail = await req("GET", `/platform/tenants/${orgId}`, { token: tokenOwner2 });
   const teks = JSON.stringify(detail.body);
   ok("detail penjual bisa dibuka", detail.status === 200);
   ok("tidak ada access_token di respons", !teks.includes("access_token"));

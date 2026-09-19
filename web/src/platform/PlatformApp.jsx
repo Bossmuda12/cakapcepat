@@ -7,12 +7,14 @@ import PlatformDashboard from "./PlatformDashboard";
 import PlatformTenants from "./PlatformTenants";
 import PlatformTenantDetail from "./PlatformTenantDetail";
 import PlatformAudit from "./PlatformAudit";
+import PlatformApprovals from "./PlatformApprovals";
 import PlatformAdmins from "./PlatformAdmins";
 import PlatformAkun from "./PlatformAkun";
 
 const NAV = [
   { to: "/superadmin", end: true, label: "Ringkasan", icon: "muat", perm: "platform.dashboard.read" },
   { to: "/superadmin/tenants", label: "Penjual", icon: "pengguna", perm: "platform.tenants.read" },
+  { to: "/superadmin/approvals", label: "Persetujuan", icon: "centang", perm: "platform.tenants.read" },
   { to: "/superadmin/audit", label: "Catatan Audit", icon: "salin", perm: "platform.audit.read" },
   { to: "/superadmin/admins", label: "Staf Platform", icon: "gir", perm: "platform.admins.manage" },
   // Tanpa perm: semua peran harus bisa mengganti password sendiri.
@@ -191,6 +193,7 @@ export default function PlatformApp() {
           <Route index element={<PlatformDashboard izin={izin} />} />
           <Route path="tenants" element={<PlatformTenants izin={izin} />} />
           <Route path="tenants/:id" element={<PlatformTenantDetail izin={izin} />} />
+          <Route path="approvals" element={<PlatformApprovals />} />
           <Route path="audit" element={<PlatformAudit />} />
           <Route path="admins" element={<PlatformAdmins me={admin} />} />
           <Route path="akun" element={<PlatformAkun me={admin} />} />

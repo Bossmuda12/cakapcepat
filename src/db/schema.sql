@@ -1118,3 +1118,56 @@ END
 $sadm$;
 
 CREATE INDEX IF NOT EXISTS idx_organization_status ON organization(status);
+
+-- ############################################################################
+-- SADM — PERSETUJUAN DUA-MATA (FOUR-EYES)
+--
+-- Untuk tindakan yang paling sulit dibatalkan, satu orang tidak cukup.
+-- Bukan karena stafnya tidak dipercaya, tapi karena satu akun yang diambil
+-- alih, satu klik yang salah, atau satu orang yang sedang marah seharusnya
+-- tidak bisa mematikan penjual secara permanen sendirian.
+--
+-- Permintaan disimpan lengkap dengan RENCANA tindakannya (payload), jadi yang
+-- disetujui penyetuju kedua adalah persis tindakan yang akan dijalankan —
+-- bukan deskripsi yang bisa berbeda dari isinya.
+-- ############################################################################
+
+CREATE TABLE IF NOT EXISTS platform_approvals (
+  id                UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  type              TEXT NOT NULL,        -- tenant.disable | platform_admin.role_change | platform_admin.deactivate
+  target_type       TEXT NOT NULL,        -- organization | platform_admin
+  target_id         UUID NOT NULL,
+  target_label      TEXT,                 -- disalin saat dibuat, supaya tetap terbaca di riwayat
+  payload           JSONB NOT NULL,       -- rencana tindakan yang akan dijalankan persis begitu disetujui
+  reason_code       TEXT NOT NULL,
+  reason_text       TEXT NOT NULL,
+  requested_by      UUID NOT NULL REFERENCES platform_admins(id) ON DELETE CASCADE,
+  requested_email   TEXT,
+  status            TEXT NOT NULL DEFAULT 'pending',  -- pending | approved | rejected | cancelled | expired
+  decided_by        UUID REFERENCES platform_admins(id) ON DELETE SET NULL,
+  decided_email     TEXT,
+  decision_reason   TEXT,
+  decided_at        TIMESTAMPTZ,
+  -- Permintaan yang menggantung berminggu-minggu berbahaya: keadaannya sudah
+  -- berubah tapi persetujuannya masih bisa dieksekusi. Jadi ada masa berlaku.
+  expires_at        TIMESTAMPTZ NOT NULL DEFAULT now() + interval '48 hours',
+  created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+DO $sadm$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'platform_approvals_status_check') THEN
+    ALTER TABLE platform_approvals ADD CONSTRAINT platform_approvals_status_check
+      CHECK (status IN ('pending','approved','rejected','cancelled','expired'));
+  END IF;
+END
+$sadm$;
+
+CREATE INDEX IF NOT EXISTS idx_platform_approvals_status ON platform_approvals(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_platform_approvals_target ON platform_approvals(target_type, target_id);
+
+-- Satu permintaan aktif per (jenis, sasaran). Tanpa ini, satu orang bisa
+-- membuat lima permintaan identik dan menunggu salah satunya kebetulan
+-- disetujui oleh orang yang tidak membaca teliti.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_platform_approvals_satu_aktif
+  ON platform_approvals(type, target_id) WHERE status = 'pending';

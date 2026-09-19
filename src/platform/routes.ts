@@ -13,6 +13,13 @@ import {
   type PlatformRequest,
   type PlatformRole,
 } from "./auth";
+import {
+  buatPermintaan,
+  putuskan,
+  kedaluwarsakanYangLewat,
+  JENIS_PERLU_DUA_MATA,
+  type JenisPersetujuan,
+} from "./approvals";
 
 export const platformRouter = Router();
 
@@ -345,6 +352,51 @@ platformRouter.post(
       return res.status(403).json({ error: `Peran ${req.platform!.role} tidak boleh melakukan "${action}"` });
     }
 
+    // MENONAKTIFKAN PERMANEN butuh persetujuan orang kedua.
+    //
+    // Ini tindakan yang paling sulit dibatalkan di seluruh panel: penjualnya
+    // kehilangan akses ke seluruh API, dan dalam keadaan normal tidak akan
+    // dibuka lagi. Satu akun staf yang diambil alih tidak boleh cukup untuk
+    // melakukannya. Membatasi dan menangguhkan tetap bisa langsung — keduanya
+    // reversibel dan kadang memang harus cepat.
+    if (action === "disable") {
+      const { rows: org } = await pool.query("SELECT name, status FROM organization WHERE id = $1", [id]);
+      if (!org[0]) return res.status(404).json({ error: "Organisasi tidak ditemukan" });
+      if (org[0].status !== expectedStatus) {
+        return res.status(409).json({
+          error: `Status sudah berubah jadi "${org[0].status}" — muat ulang halaman dulu`,
+          currentStatus: org[0].status,
+        });
+      }
+
+      const hasil = await buatPermintaan({
+        req,
+        type: "tenant.disable",
+        targetType: "organization",
+        targetId: id,
+        targetLabel: org[0].name,
+        payload: { action: "disable", status: "disabled", expectedStatus },
+        reasonCode,
+        reasonText,
+      });
+
+      if (!hasil.dibuat) {
+        return res.status(409).json({
+          error: `Sudah ada permintaan menonaktifkan yang menunggu persetujuan (diajukan ${hasil.permintaan?.requested_email ?? "staf lain"})`,
+          approvalId: hasil.permintaan?.id ?? null,
+        });
+      }
+
+      return res.status(202).json({
+        ok: true,
+        needsSecondApproval: true,
+        approvalId: hasil.permintaan.id,
+        expiresAt: hasil.permintaan.expires_at,
+        message:
+          "Permintaan dicatat. Menonaktifkan penjual butuh persetujuan staf platform LAIN — kamu tidak bisa menyetujui permintaanmu sendiri.",
+      });
+    }
+
     // expectedStatus = kontrol konkurensi. Kalau admin lain sudah mengubah
     // status organisasi ini sejak halaman dimuat, tindakannya ditolak — bukan
     // menimpa keputusan orang lain tanpa dia tahu.
@@ -373,6 +425,119 @@ platformRouter.post(
     });
 
     res.json({ ok: true, organization: rows[0], message: `Organisasi ${spec.label}.` });
+  }
+);
+
+// ============================================================================
+// ANTREAN PERSETUJUAN
+// ============================================================================
+platformRouter.get(
+  "/platform/approvals",
+  requirePlatformAuth,
+  requirePermission(PERMISSIONS.TENANTS_READ),
+  async (req: PlatformRequest, res) => {
+    await kedaluwarsakanYangLewat();
+    const status = typeof req.query.status === "string" ? req.query.status : "pending";
+    const { rows } = await pool.query(
+      `SELECT id, type, target_type, target_id, target_label, payload, reason_code, reason_text,
+              requested_email, requested_by, status, decided_email, decision_reason, decided_at,
+              expires_at, created_at
+       FROM platform_approvals
+       WHERE ($1 = 'semua' OR status = $1)
+       ORDER BY created_at DESC LIMIT 100`,
+      [status]
+    );
+    res.json({
+      items: rows.map((r) => ({
+        ...r,
+        // Supaya layar bisa menonaktifkan tombolnya juga — tapi yang mengikat
+        // tetap pemeriksaan di server, bukan ini.
+        diajukanOlehSaya: r.requested_by === req.platform!.platformAdminId,
+        judul: JENIS_PERLU_DUA_MATA[r.type as JenisPersetujuan] ?? r.type,
+      })),
+      jenis: JENIS_PERLU_DUA_MATA,
+    });
+  }
+);
+
+const keputusanSchema = z.object({
+  decision: z.enum(["approve", "reject"]),
+  reason: z.string().trim().min(10, "Alasan keputusan minimal 10 karakter").max(2000),
+});
+
+platformRouter.post(
+  "/platform/approvals/:id/decision",
+  requirePlatformAuth,
+  async (req: PlatformRequest, res) => {
+    const parsed = keputusanSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+    const hasil = await putuskan(
+      req,
+      req.params.id,
+      parsed.data.decision,
+      parsed.data.reason,
+      async (baris) => {
+        if (baris.type === "tenant.disable") {
+          if (!req.platform!.permissions.has(PERMISSIONS.TENANTS_DISABLE)) {
+            return { ok: false, pesan: "Peran kamu tidak boleh menonaktifkan penjual" };
+          }
+          const { rows } = await pool.query(
+            `UPDATE organization
+             SET status = 'disabled', status_reason = $1, status_changed_at = now(), status_changed_by = $2
+             WHERE id = $3 AND status = $4 RETURNING name`,
+            [baris.reason_text, req.platform!.platformAdminId, baris.target_id, baris.payload.expectedStatus]
+          );
+          if (!rows[0]) {
+            return { ok: false, pesan: "Status organisasi sudah berubah sejak permintaan diajukan — permintaan ini tidak lagi berlaku" };
+          }
+          return { ok: true, pesan: `Organisasi ${rows[0].name} dinonaktifkan.` };
+        }
+
+        if (baris.type === "platform_admin.role_change" || baris.type === "platform_admin.deactivate") {
+          if (!req.platform!.permissions.has(PERMISSIONS.ADMINS_MANAGE)) {
+            return { ok: false, pesan: "Peran kamu tidak boleh mengelola staf platform" };
+          }
+          const sets: string[] = [];
+          const vals: unknown[] = [];
+          if (baris.payload.role) { vals.push(baris.payload.role); sets.push(`role = $${vals.length}`); }
+          if (baris.payload.isActive !== undefined) { vals.push(baris.payload.isActive); sets.push(`is_active = $${vals.length}`); }
+          if (sets.length === 0) return { ok: false, pesan: "Rencana tindakan kosong" };
+          vals.push(baris.target_id);
+          const { rows } = await pool.query(
+            `UPDATE platform_admins SET ${sets.join(", ")} WHERE id = $${vals.length} RETURNING email`,
+            vals
+          );
+          if (!rows[0]) return { ok: false, pesan: "Staf platform tidak ditemukan" };
+          invalidatePlatformCache(baris.target_id);
+          return { ok: true, pesan: `Staf ${rows[0].email} diperbarui.` };
+        }
+
+        return { ok: false, pesan: `Jenis permintaan "${baris.type}" tidak dikenali` };
+      }
+    );
+    res.status(hasil.status).json(hasil.body);
+  }
+);
+
+// Pemohon boleh membatalkan permintaannya sendiri.
+platformRouter.post(
+  "/platform/approvals/:id/cancel",
+  requirePlatformAuth,
+  async (req: PlatformRequest, res) => {
+    const { rows } = await pool.query(
+      `UPDATE platform_approvals SET status = 'cancelled', decided_at = now()
+       WHERE id = $1 AND status = 'pending' AND requested_by = $2 RETURNING id, type, target_id, target_type`,
+      [req.params.id, req.platform!.platformAdminId]
+    );
+    if (!rows[0]) {
+      return res.status(404).json({ error: "Permintaan tidak ditemukan, sudah diputuskan, atau bukan milikmu" });
+    }
+    await writePlatformAudit({
+      req, action: `approval.cancelled:${rows[0].type}`,
+      targetType: rows[0].target_type, targetId: rows[0].target_id,
+    });
+    res.json({ ok: true, message: "Permintaan dibatalkan." });
   }
 );
 
@@ -474,34 +639,45 @@ platformRouter.patch(
       return res.status(400).json({ error: "Tidak bisa mengubah peran atau status akun sendiri" });
     }
 
-    const sets: string[] = [];
-    const vals: unknown[] = [];
-    if (parsed.data.role !== undefined) {
-      vals.push(parsed.data.role);
-      sets.push(`role = $${vals.length}`);
+    if (parsed.data.role === undefined && parsed.data.isActive === undefined) {
+      return res.status(400).json({ error: "Tidak ada perubahan dikirim" });
     }
-    if (parsed.data.isActive !== undefined) {
-      vals.push(parsed.data.isActive);
-      sets.push(`is_active = $${vals.length}`);
-    }
-    if (sets.length === 0) return res.status(400).json({ error: "Tidak ada perubahan dikirim" });
 
-    vals.push(id);
-    const { rows } = await pool.query(
-      `UPDATE platform_admins SET ${sets.join(", ")} WHERE id = $${vals.length}
-       RETURNING id, email, name, role, is_active`,
-      vals
+    // Mengubah peran atau menonaktifkan staf platform butuh persetujuan orang
+    // KETIGA (pemohon + penyetuju, keduanya bukan sasaran). Tanpa ini, satu
+    // akun platform_owner yang diambil alih bisa menurunkan semua staf lain
+    // lalu tinggal sendirian mengendalikan seluruh platform.
+    const { rows: sasaran } = await pool.query(
+      "SELECT email, role, is_active FROM platform_admins WHERE id = $1",
+      [id]
     );
-    if (!rows[0]) return res.status(404).json({ error: "Staf platform tidak ditemukan" });
+    if (!sasaran[0]) return res.status(404).json({ error: "Staf platform tidak ditemukan" });
 
-    invalidatePlatformCache(id);
-    await writePlatformAudit({
+    const jenis = parsed.data.role !== undefined ? "platform_admin.role_change" : "platform_admin.deactivate";
+    const hasil = await buatPermintaan({
       req,
-      action: "platform_admin.update",
+      type: jenis,
       targetType: "platform_admin",
       targetId: id,
-      detail: parsed.data,
+      targetLabel: sasaran[0].email,
+      payload: { ...parsed.data, isActive: parsed.data.isActive },
+      reasonCode: jenis,
+      reasonText: `Perubahan staf platform ${sasaran[0].email}: ${JSON.stringify(parsed.data)}`,
     });
-    res.json(rows[0]);
+
+    if (!hasil.dibuat) {
+      return res.status(409).json({
+        error: `Sudah ada permintaan perubahan untuk staf ini yang menunggu persetujuan (diajukan ${hasil.permintaan?.requested_email ?? "staf lain"})`,
+        approvalId: hasil.permintaan?.id ?? null,
+      });
+    }
+    res.status(202).json({
+      ok: true,
+      needsSecondApproval: true,
+      approvalId: hasil.permintaan.id,
+      expiresAt: hasil.permintaan.expires_at,
+      message:
+        "Permintaan dicatat. Perubahan peran/status staf platform butuh persetujuan staf LAIN — kamu tidak bisa menyetujui permintaanmu sendiri.",
+    });
   }
 );
