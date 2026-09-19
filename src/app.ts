@@ -75,6 +75,39 @@ app.disable("x-powered-by");
 
 const isProd = process.env.NODE_ENV === "production";
 
+/* --------------------------------------------------------------------------
+   SATU ALAMAT RESMI: www.cakapcepat.com
+
+   Railway menyajikan aplikasi yang sama di `cakapcepat.com` dan
+   `www.cakapcepat.com`. Dua host yang menyajikan isi identik adalah masalah
+   nyata, bukan soal rapi-rapian:
+
+   - Mesin pencari melihat dua salinan dari setiap halaman dan harus menebak
+     mana yang asli. Tag canonical kita menunjuk ke www, tapi pengalihan 301
+     jauh lebih tegas daripada petunjuk.
+   - Sesi login terikat pada host. Pengguna yang masuk lewat apex lalu membuka
+     tautan www akan tampak keluar sendiri.
+
+   Karena itu apex dialihkan permanen ke www, lengkap dengan path dan query.
+   Dikerjakan di aplikasi, bukan di Cloudflare, supaya aturannya ikut ke mana
+   pun aplikasi ini dipindahkan dan terlihat oleh siapa pun yang membaca kode
+   ini.
+
+   Railway menaruh host asli di header `Host` lewat proksinya, jadi
+   `req.hostname` sudah benar tanpa perlu `trust proxy`.
+   -------------------------------------------------------------------------- */
+const HOST_RESMI = "www.cakapcepat.com";
+app.use((req, res, next) => {
+  const host = req.headers.host?.toLowerCase();
+  // Hanya apex produksi yang dialihkan. Domain railway.app, localhost, dan
+  // host uji dibiarkan apa adanya — kalau tidak, uji end-to-end dan pratinjau
+  // Railway ikut terlempar ke domain produksi.
+  if (host === "cakapcepat.com") {
+    return res.redirect(301, `https://${HOST_RESMI}${req.originalUrl}`);
+  }
+  next();
+});
+
 // Origin yang boleh memanggil API ini dari browser. Dashboard disajikan dari
 // server yang sama (same-origin), jadi daftar ini sengaja pendek.
 const allowedOrigins = new Set<string>(

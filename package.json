@@ -15,7 +15,8 @@
     "test:isolasi": "tsx scripts/uji-isolasi-tenant.ts",
     "platform:admin": "tsx scripts/buat-staf-platform.ts",
     "test:platform": "tsx scripts/uji-panel-platform.ts",
-    "test:peran": "tsx scripts/uji-peran-organisasi.ts"
+    "test:peran": "tsx scripts/uji-peran-organisasi.ts",
+    "test:host": "tsx scripts/uji-host-resmi.ts"
   },
   "dependencies": {
     "@whiskeysockets/baileys": "^6.7.24",
