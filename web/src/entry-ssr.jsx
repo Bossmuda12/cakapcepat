@@ -53,7 +53,7 @@ export const HALAMAN_META = [
     berkas: "index.html",
     judul: "CakapCepat — Otomatisasi WhatsApp & AI Customer Service untuk Bisnis COD",
     deskripsi:
-      "CakapCepat membalas chat pelanggan WhatsApp secara otomatis dengan AI, mencatat closing, merekap pesanan ke grup, memantau status pengiriman COD, dan mengirim laporan harian — tanpa perlu tim CS besar.",
+      "CakapCepat (ditulis juga Cakap Cepat) membalas chat pelanggan WhatsApp secara otomatis dengan AI, mencatat closing, merekap pesanan ke grup, memantau status pengiriman COD, dan mengirim laporan harian.",
     prioritas: "1.0",
     frekuensi: "weekly",
   },

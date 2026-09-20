@@ -85,6 +85,36 @@ function schemaMerek() {
       parentOrganization: { "@type": "Organization", name: "Taha Group" },
       sameAs: SOSIAL,
     },
+    /* Pasangan tanya-jawab ini ADA di halaman depan (bagian "Nama"). Tujuannya
+       satu: menyatakan hubungan antara ejaan satu kata dan dua kata secara
+       eksplisit, supaya ketika Google menulis ulang kueri menjadi "cakap cepat"
+       halaman ini punya pijakan. Jangan tulis pertanyaan yang tidak terlihat di
+       halaman — itu melanggar pedoman structured data Google. */
+    {
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      "@id": `${SITUS}/#tanya-nama`,
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "CakapCepat atau Cakap Cepat?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Nama resminya ditulis satu kata: CakapCepat. Banyak orang mengetiknya dua kata, Cakap Cepat, dan keduanya menunjuk hal yang sama - layanan otomatisasi WhatsApp dari Taha Group di cakapcepat.com.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Apakah CakapCepat menyediakan kursus bahasa?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text:
+              "Tidak. CakapCepat mengerjakan satu hal saja: membalas chat pelanggan WhatsApp dengan AI, mencatat pesanan, dan memantau pengiriman COD. Kelas bahasa dengan nama serupa adalah layanan lain.",
+          },
+        },
+      ],
+    },
     {
       "@context": "https://schema.org",
       "@type": "WebSite",

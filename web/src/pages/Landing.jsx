@@ -150,7 +150,7 @@ export default function Landing() {
           <div className="landing-hero-grid">
             <div className="landing-hero-text">
           <h1>
-            Chat pelanggan dibalas otomatis.
+            CakapCepat: chat pelanggan dibalas otomatis.
             <br />
             Closing tercatat sendiri.
           </h1>
@@ -292,6 +292,21 @@ export default function Landing() {
               </li>
             ))}
           </ul>
+        </section>
+
+        <section className="landing-section" id="nama">
+          <p className="landing-kicker">Nama</p>
+          <h2 className="landing-h2">CakapCepat atau Cakap Cepat?</h2>
+          <p className="landing-section-lead">
+            Nama resminya ditulis satu kata: <strong>CakapCepat</strong>. Banyak orang mengetiknya
+            dua kata, <strong>Cakap Cepat</strong>, dan keduanya menunjuk hal yang sama — layanan
+            otomatisasi WhatsApp dari Taha Group di cakapcepat.com.
+          </p>
+          <p className="landing-section-lead">
+            Kami bukan penyedia kursus bahasa. Kalau yang Anda cari adalah kelas bahasa dengan nama
+            serupa, itu layanan lain. CakapCepat mengerjakan satu hal saja: membalas chat pelanggan
+            WhatsApp dengan AI, mencatat pesanan, dan memantau pengiriman COD.
+          </p>
         </section>
 
         <section className="landing-section" id="tentang">
