@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Pilih from "../components/Pilih";
 
 const PAGE_SIZE = 50;
 
@@ -145,14 +146,14 @@ export default function AuditLog() {
       ) : (
         <>
           <div className="toolbar" style={{ margin: "10px 0 14px" }}>
-            <select value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} style={{ maxWidth: 260 }}>
+            <Pilih value={actionFilter} onChange={(e) => setActionFilter(e.target.value)} style={{ maxWidth: 260 }}>
               <option value="">Semua Tindakan</option>
               {ACTION_OPTIONS.map((a) => (
                 <option key={a.value} value={a.value}>
                   {a.label}
                 </option>
               ))}
-            </select>
+            </Pilih>
           </div>
 
           {error && <div className="error-box">{error}</div>}

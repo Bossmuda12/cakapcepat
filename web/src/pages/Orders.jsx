@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, getToken } from "../api";
 import DateRangeFilter from "../components/DateRangeFilter";
 import { defaultRange } from "../dateRangePresets";
+import Pilih from "../components/Pilih";
 
 const STATUS_OPTIONS = [
   { value: "qualified_cod", label: "Qualified COD", badge: "yellow" },
@@ -61,13 +62,13 @@ function OrderRow({ order, onUpdated }) {
       </td>
       <td>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-          <select value={status} onChange={(e) => setStatus(e.target.value)} style={{ minWidth: 130 }}>
+          <Pilih value={status} onChange={(e) => setStatus(e.target.value)} style={{ minWidth: 130 }}>
             {STATUS_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
               </option>
             ))}
-          </select>
+          </Pilih>
           <input
             type="number"
             placeholder="Nilai (Rp)"
@@ -169,14 +170,14 @@ export default function Orders() {
       <div className="toolbar" style={{ marginBottom: 18 }}>
         <div />
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} style={{ maxWidth: 200 }}>
+          <Pilih value={productFilter} onChange={(e) => setProductFilter(e.target.value)} style={{ maxWidth: 200 }}>
             <option value="">Semua Produk</option>
             {products.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name}
               </option>
             ))}
-          </select>
+          </Pilih>
           <DateRangeFilter value={range} onChange={setRange} />
           <button className="btn" type="button" disabled={downloading} onClick={download}>
             {downloading ? "Menyiapkan..." : "Download Laporan (CSV)"}

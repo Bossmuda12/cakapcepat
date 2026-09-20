@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import ActionBtn from "../components/ActionBtn";
 import PasswordInput from "../components/PasswordInput";
 import { platformApi } from "./api";
+import Pilih from "../components/Pilih";
 
 const PERAN = [
   { key: "platform_owner", label: "Platform Owner", jelas: "Semua izin, termasuk menonaktifkan penjual dan mengelola staf platform." },
@@ -120,7 +121,7 @@ export default function PlatformAdmins({ me }) {
             </div>
             <div className="field">
               <label htmlFor="nr">Peran</label>
-              <select
+              <Pilih
                 id="nr"
                 value={form.role}
                 onChange={(e) => setForm((f) => ({ ...f, role: e.target.value }))}
@@ -130,7 +131,7 @@ export default function PlatformAdmins({ me }) {
                     {p.label}
                   </option>
                 ))}
-              </select>
+              </Pilih>
               <small className="field-hint">
                 {PERAN.find((p) => p.key === form.role)?.jelas}
               </small>
@@ -170,7 +171,7 @@ export default function PlatformAdmins({ me }) {
                       </td>
                       <td>{a.name ?? "-"}</td>
                       <td>
-                        <select
+                        <Pilih
                           value={a.role}
                           disabled={sendiri}
                           title={sendiri ? "Tidak bisa mengubah peran akun sendiri" : undefined}
@@ -181,7 +182,7 @@ export default function PlatformAdmins({ me }) {
                               {p.label}
                             </option>
                           ))}
-                        </select>
+                        </Pilih>
                       </td>
                       <td>
                         <span className={`plat-status plat-status-${a.is_active ? "active" : "disabled"}`}>

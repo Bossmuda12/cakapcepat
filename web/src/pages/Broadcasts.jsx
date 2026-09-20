@@ -3,6 +3,7 @@ import { api } from "../api";
 import Modal from "../components/Modal";
 import DateRangeFilter from "../components/DateRangeFilter";
 import { defaultRange } from "../dateRangePresets";
+import Pilih from "../components/Pilih";
 
 function statusBadge(status) {
   if (status === "done") return <span className="badge green">Selesai</span>;
@@ -92,14 +93,14 @@ export default function Broadcasts() {
           </div>
           <div className="field">
             <label>Kirim dari nomor</label>
-            <select value={form.channelId} onChange={update("channelId")} required>
+            <Pilih value={form.channelId} onChange={update("channelId")} required>
               <option value="">Pilih nomor WA...</option>
               {channels.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label || c.display_phone_number || c.id}
                 </option>
               ))}
-            </select>
+            </Pilih>
           </div>
           <div className="field">
             <label>Nama template WhatsApp</label>

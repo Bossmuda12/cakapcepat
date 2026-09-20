@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
 import ActionBtn from "../components/ActionBtn";
+import Pilih from "../components/Pilih";
 
 // Harga selalu disimpan backend dalam *Cents (sen) — lihat catatan endpoint
 // produk. Ditampilkan/diterima di sini dalam RM supaya owner tidak perlu
@@ -641,7 +642,7 @@ export default function Products() {
             </div>
             <div className="field">
               <label>Kategori</label>
-              <select
+              <Pilih
                 value={productForm.categoryId}
                 onChange={(e) => setProductForm((f) => ({ ...f, categoryId: e.target.value }))}
               >
@@ -651,7 +652,7 @@ export default function Products() {
                     {c.name}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
           </div>
           <div className="field">

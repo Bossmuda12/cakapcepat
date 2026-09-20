@@ -6,6 +6,7 @@ import { defaultRange } from "../dateRangePresets";
 import OrdersStats from "./OrdersStats";
 import Check from "../components/Check";
 import ActionBtn from "../components/ActionBtn";
+import Pilih from "../components/Pilih";
 
 const PAGE_SIZE = 20;
 
@@ -448,36 +449,36 @@ export default function OrdersList() {
           </div>
           <div className="field">
             <label>Status Penjualan</label>
-            <select value={salesStatusFilter} onChange={(e) => setSalesStatusFilter(e.target.value)}>
+            <Pilih value={salesStatusFilter} onChange={(e) => setSalesStatusFilter(e.target.value)}>
               <option value="">Semua</option>
               {SALES_STATUS_OPTIONS.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
                 </option>
               ))}
-            </select>
+            </Pilih>
           </div>
           <div className="field">
             <label>Status Pengiriman</label>
-            <select value={shippingStatusFilter} onChange={(e) => setShippingStatusFilter(e.target.value)}>
+            <Pilih value={shippingStatusFilter} onChange={(e) => setShippingStatusFilter(e.target.value)}>
               <option value="">Semua</option>
               {SHIPPING_STATUS_OPTIONS.map((s) => (
                 <option key={s.value} value={s.value}>
                   {s.label}
                 </option>
               ))}
-            </select>
+            </Pilih>
           </div>
           <div className="field">
             <label>Produk</label>
-            <select value={productFilter} onChange={(e) => setProductFilter(e.target.value)}>
+            <Pilih value={productFilter} onChange={(e) => setProductFilter(e.target.value)}>
               <option value="">Semua Produk</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
-            </select>
+            </Pilih>
           </div>
           <div className="field">
             <label>&nbsp;</label>
@@ -658,18 +659,18 @@ export default function OrdersList() {
           <div className="inline-form">
             <div className="field">
               <label>Produk</label>
-              <select value={createForm.productId} onChange={(e) => onCreateProductChange(e.target.value)}>
+              <Pilih value={createForm.productId} onChange={(e) => onCreateProductChange(e.target.value)}>
                 <option value="">— tidak ditentukan —</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
             <div className="field">
               <label>Varian</label>
-              <select
+              <Pilih
                 value={createForm.variantId}
                 onChange={(e) => setCreateForm((f) => ({ ...f, variantId: e.target.value }))}
                 disabled={!createForm.productId}
@@ -680,7 +681,7 @@ export default function OrdersList() {
                     {v.name}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
             <div className="field">
               <label>Qty</label>
@@ -713,7 +714,7 @@ export default function OrdersList() {
             </div>
             <div className="field">
               <label>Status Penjualan</label>
-              <select
+              <Pilih
                 value={createForm.salesStatus}
                 onChange={(e) => setCreateForm((f) => ({ ...f, salesStatus: e.target.value }))}
               >
@@ -722,7 +723,7 @@ export default function OrdersList() {
                     {s.label}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
           </div>
           <div className="field">
@@ -827,7 +828,7 @@ export default function OrdersList() {
             <div className="inline-form">
               <div className="field">
                 <label>Produk</label>
-                <select
+                <Pilih
                   value={editForm.productId}
                   onChange={(e) => setEditForm((f) => ({ ...f, productId: e.target.value, variantId: "" }))}
                 >
@@ -837,11 +838,11 @@ export default function OrdersList() {
                       {p.name}
                     </option>
                   ))}
-                </select>
+                </Pilih>
               </div>
               <div className="field">
                 <label>Varian</label>
-                <select
+                <Pilih
                   value={editForm.variantId}
                   onChange={(e) => setEditForm((f) => ({ ...f, variantId: e.target.value }))}
                   disabled={!editForm.productId}
@@ -852,7 +853,7 @@ export default function OrdersList() {
                       {v.name}
                     </option>
                   ))}
-                </select>
+                </Pilih>
               </div>
               <div className="field">
                 <label>Qty</label>
@@ -903,7 +904,7 @@ export default function OrdersList() {
             <div className="inline-form">
               <div className="field">
                 <label>Status Pengiriman</label>
-                <select
+                <Pilih
                   value={shippingForm.shippingStatus}
                   onChange={(e) => setShippingForm((f) => ({ ...f, shippingStatus: e.target.value }))}
                 >
@@ -912,7 +913,7 @@ export default function OrdersList() {
                       {s.label}
                     </option>
                   ))}
-                </select>
+                </Pilih>
               </div>
               <div className="field">
                 <label>Kurir</label>

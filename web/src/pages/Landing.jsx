@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { PANDUAN } from "./panduan/isi";
+import { Muncul, SeniMisi, SeniBatas, ButirCahaya } from "./LandingSeni";
 import {
   HeroAurora,
   MockupChat,
@@ -19,21 +20,25 @@ import {
 const MISI = [
   {
     no: "01",
+    seni: "cepat",
     judul: "Menjawab pelanggan tanpa membuat mereka menunggu",
     isi: "Setiap chat yang masuk dijawab dalam hitungan detik, dengan jeda mengetik yang wajar supaya terasa seperti dibalas orang, bukan mesin.",
   },
   {
     no: "02",
+    seni: "catat",
     judul: "Mencatat setiap pesanan tanpa bergantung pada ingatan admin",
     isi: "Closing, pengiriman, komplain, dan retur tercatat otomatis dari percakapan, lalu direkap ke grup dan laporan harian.",
   },
   {
     no: "03",
+    seni: "konsisten",
     judul: "Menjaga jawaban tetap konsisten di semua produk",
     isi: "Setiap produk punya materi pengetahuannya sendiri, sehingga jawaban soal harga, ongkir, dan garansi tidak berubah-ubah antar admin.",
   },
   {
     no: "04",
+    seni: "laporan",
     judul: "Membuat pemilik usaha tahu keadaan tokonya setiap hari",
     isi: "Laporan harian berisi jumlah chat masuk, closing, pesanan bermasalah, dan tingkat retur — tanpa perlu menagih laporan ke siapa pun.",
   },
@@ -101,14 +106,17 @@ const LANGKAH = [
 
 const BATAS = [
   {
+    seni: "materi",
     judul: "Kualitas jawaban mengikuti kualitas materi Anda",
     isi: "AI tidak mengarang harga atau stok. Kalau materi produk kosong atau usang, jawabannya akan seadanya. Materi yang rapi adalah pekerjaan yang tetap harus Anda lakukan.",
   },
   {
+    seni: "manusia",
     judul: "Manusia tetap dibutuhkan",
     isi: "Tawar-menawar, komplain berat, dan keputusan uang tetap ditangani orang. CakapCepat dirancang untuk mengurangi beban admin, bukan menghapus peran mereka.",
   },
   {
+    seni: "janji",
     judul: "Kami tidak menjanjikan kenaikan penjualan",
     isi: "Yang kami janjikan adalah kecepatan balasan, pencatatan yang rapi, dan follow-up yang tidak terlewat. Penjualan ditentukan produk, harga, dan iklan Anda sendiri.",
   },
@@ -138,6 +146,7 @@ export default function Landing() {
       <main className="landing-main">
         <section className="landing-hero">
           <HeroAurora />
+          <ButirCahaya />
           <div className="landing-hero-grid">
             <div className="landing-hero-text">
           <h1>
@@ -169,7 +178,7 @@ export default function Landing() {
           </div>
         </section>
 
-        <PitaAlur />
+        <Muncul><PitaAlur /></Muncul>
 
         <section className="landing-pillars" aria-label="Ringkasan layanan">
           <div>
@@ -187,7 +196,7 @@ export default function Landing() {
         </section>
 
         <section className="landing-showcase" aria-label="Pratinjau dasbor">
-          <PratinjauDasbor />
+          <Muncul><PratinjauDasbor /></Muncul>
           <p className="landing-showcase-cap">
             Tampilan dasbor sesudah masuk: ringkasan harian, grafik closing, dan daftar pesanan
             terbaru dalam satu layar. Angka pada gambar hanya contoh.
@@ -205,14 +214,15 @@ export default function Landing() {
             Untuk sampai ke sana, kami menetapkan empat misi kerja berikut.
           </p>
           <ol className="landing-misi">
-            {MISI.map((m) => (
-              <li key={m.no}>
+            {MISI.map((m, i) => (
+              <Muncul as="li" key={m.no} delay={i * 90}>
                 <span className="landing-misi-no">{m.no}</span>
                 <div>
                   <h3>{m.judul}</h3>
                   <p>{m.isi}</p>
                 </div>
-              </li>
+                <SeniMisi nama={m.seni} />
+              </Muncul>
             ))}
           </ol>
         </section>
@@ -221,14 +231,14 @@ export default function Landing() {
           <p className="landing-kicker">Layanan</p>
           <h2 className="landing-h2">Apa yang dikerjakan CakapCepat setiap hari</h2>
           <div className="landing-features">
-            {LAYANAN.map((l) => (
-              <article key={l.judul}>
+            {LAYANAN.map((l, i) => (
+              <Muncul as="article" key={l.judul} delay={i * 70}>
                 <svg viewBox="0 0 24 24" className="landing-feature-icon" aria-hidden="true">
                   <path d={l.ikon} />
                 </svg>
                 <h3>{l.judul}</h3>
                 <p>{l.isi}</p>
-              </article>
+              </Muncul>
             ))}
           </div>
         </section>
@@ -237,13 +247,13 @@ export default function Landing() {
           <p className="landing-kicker">Cara Kerja</p>
           <h2 className="landing-h2">Empat langkah, tanpa ganti nomor</h2>
           <ol className="landing-steps">
-            {LANGKAH.map((s) => (
-              <li key={s.no}>
+            {LANGKAH.map((s, i) => (
+              <Muncul as="li" key={s.no} delay={i * 90}>
                 <span className="landing-step-no">{s.no}</span>
                 <IlustrasiLangkah nama={s.seni} />
                 <h3>{s.judul}</h3>
                 <p>{s.isi}</p>
-              </li>
+              </Muncul>
             ))}
           </ol>
         </section>
@@ -255,11 +265,12 @@ export default function Landing() {
             Kami lebih suka Anda tahu batasnya sejak awal daripada kecewa di tengah jalan.
           </p>
           <div className="landing-limit-grid">
-            {BATAS.map((b) => (
-              <article key={b.judul}>
+            {BATAS.map((b, i) => (
+              <Muncul as="article" key={b.judul} delay={i * 90}>
+                <SeniBatas nama={b.seni} />
                 <h3>{b.judul}</h3>
                 <p>{b.isi}</p>
-              </article>
+              </Muncul>
             ))}
           </div>
         </section>

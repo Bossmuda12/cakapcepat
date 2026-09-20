@@ -4,6 +4,7 @@ import { useAuth } from "../AuthContext";
 import Modal from "../components/Modal";
 import PasswordInput from "../components/PasswordInput";
 import ActionBtn from "../components/ActionBtn";
+import Pilih from "../components/Pilih";
 
 const emptyForm = { name: "", email: "", password: "", role: "agent" };
 const emptyEditForm = { name: "", email: "", password: "", role: "agent" };
@@ -176,11 +177,11 @@ export default function Team() {
           </div>
           <div className="field">
             <label>Peran</label>
-            <select value={form.role} onChange={update("role")}>
+            <Pilih value={form.role} onChange={update("role")}>
               <option value="agent">Agent (CS)</option>
               <option value="admin">Admin</option>
               <option value="owner">Owner</option>
-            </select>
+            </Pilih>
           </div>
           <button className="btn block" type="submit" disabled={busy}>
             {busy ? "Menyimpan..." : "Simpan"}
@@ -211,11 +212,11 @@ export default function Team() {
           </div>
           <div className="field">
             <label>Peran</label>
-            <select value={editForm.role} onChange={updateEditForm("role")}>
+            <Pilih value={editForm.role} onChange={updateEditForm("role")}>
               <option value="agent">Agent (CS)</option>
               <option value="admin">Admin</option>
               <option value="owner">Owner</option>
-            </select>
+            </Pilih>
           </div>
           <button className="btn block" type="submit" disabled={editBusy}>
             {editBusy ? "Menyimpan..." : "Simpan Perubahan"}

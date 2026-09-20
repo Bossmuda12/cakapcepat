@@ -3,6 +3,7 @@ import { api } from "../api";
 import Modal from "../components/Modal";
 import QrConnectModal from "../components/QrConnectModal";
 import ActionBtn from "../components/ActionBtn";
+import Pilih from "../components/Pilih";
 
 const emptyForm = {
   label: "",
@@ -268,36 +269,36 @@ export default function Channels() {
           <div className="inline-form">
             <div className="field">
               <label>Pemilik (CS)</label>
-              <select value={form.ownerUserId} onChange={update("ownerUserId")}>
+              <Pilih value={form.ownerUserId} onChange={update("ownerUserId")}>
                 <option value="">— tidak ditentukan —</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name || u.email}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
             <div className="field">
               <label>Produk</label>
-              <select value={form.productId} onChange={update("productId")}>
+              <Pilih value={form.productId} onChange={update("productId")}>
                 <option value="">— tidak ditentukan —</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
             <div className="field">
               <label>Departemen</label>
-              <select value={form.departmentId} onChange={update("departmentId")}>
+              <Pilih value={form.departmentId} onChange={update("departmentId")}>
                 <option value="">— tidak ditentukan —</option>
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
           </div>
           <button className="btn block" type="submit" disabled={busy}>
@@ -326,36 +327,36 @@ export default function Channels() {
           <div className="inline-form">
             <div className="field">
               <label>Pemilik (CS)</label>
-              <select value={qrForm.ownerUserId} onChange={updateQrForm("ownerUserId")}>
+              <Pilih value={qrForm.ownerUserId} onChange={updateQrForm("ownerUserId")}>
                 <option value="">— tidak ditentukan —</option>
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.name || u.email}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
             <div className="field">
               <label>Produk</label>
-              <select value={qrForm.productId} onChange={updateQrForm("productId")}>
+              <Pilih value={qrForm.productId} onChange={updateQrForm("productId")}>
                 <option value="">— tidak ditentukan —</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
             <div className="field">
               <label>Departemen</label>
-              <select value={qrForm.departmentId} onChange={updateQrForm("departmentId")}>
+              <Pilih value={qrForm.departmentId} onChange={updateQrForm("departmentId")}>
                 <option value="">— tidak ditentukan —</option>
                 {departments.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.name}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
           </div>
           <button className="btn block" type="submit" disabled={qrCreateBusy}>

@@ -6,6 +6,7 @@ import DateRangeFilter from "../components/DateRangeFilter";
 import EmojiPicker from "../components/EmojiPicker";
 import { defaultRange } from "../dateRangePresets";
 import SearchField from "../components/SearchField";
+import Pilih from "../components/Pilih";
 
 const PAGE_SIZE = 50;
 
@@ -347,7 +348,7 @@ export default function Conversations() {
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
             />
-            <select
+            <Pilih
               className="chat-filter"
               value={productFilter}
               onChange={(e) => setProductFilter(e.target.value)}
@@ -359,7 +360,7 @@ export default function Conversations() {
                   {p.name}
                 </option>
               ))}
-            </select>
+            </Pilih>
             {teamMembers.length > 0 && (
               <div className="chat-chiprow">
                 <button

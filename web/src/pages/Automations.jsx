@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
 import PasswordInput from "../components/PasswordInput";
+import Pilih from "../components/Pilih";
 
 const TRIGGER_LABELS = {
   keyword: "Kata kunci",
@@ -221,22 +222,22 @@ export default function Automations() {
           <div className="inline-form">
             <div className="field">
               <label>Nomor WhatsApp</label>
-              <select value={form.channelId} onChange={update("channelId")} required>
+              <Pilih value={form.channelId} onChange={update("channelId")} required>
                 <option value="">Pilih nomor...</option>
                 {channels.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.label || c.display_phone_number || c.id}
                   </option>
                 ))}
-              </select>
+              </Pilih>
             </div>
             <div className="field">
               <label>Jenis aturan</label>
-              <select value={form.triggerType} onChange={update("triggerType")}>
+              <Pilih value={form.triggerType} onChange={update("triggerType")}>
                 <option value="keyword">Kata kunci</option>
                 <option value="office_hours">Jam kerja</option>
                 <option value="fallback_to_ai">Fallback ke AI</option>
-              </select>
+              </Pilih>
             </div>
           </div>
 

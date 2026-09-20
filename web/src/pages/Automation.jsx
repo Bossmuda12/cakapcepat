@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Check from "../components/Check";
+import Pilih from "../components/Pilih";
 
 function centsToRmInput(cents) {
   if (cents === null || cents === undefined) return "";
@@ -166,7 +167,7 @@ export default function Automation() {
             <div className="inline-form">
               <div className="field">
                 <label>Nomor WhatsApp</label>
-                <select
+                <Pilih
                   value={groupChannelId}
                   onChange={(e) => {
                     setGroupChannelId(e.target.value);
@@ -181,7 +182,7 @@ export default function Automation() {
                       {c.label || c.display_phone_number || c.id}
                     </option>
                   ))}
-                </select>
+                </Pilih>
               </div>
               <button className="btn secondary" type="button" disabled={!groupChannelId || groupsLoading} onClick={loadGroups}>
                 {groupsLoading ? "Memuat..." : "Muat Daftar Grup"}
@@ -253,7 +254,7 @@ export default function Automation() {
 
         <div className="field">
           <label>Nomor pengirim laporan harian</label>
-          <select
+          <Pilih
             value={form.dailyReportChannelId}
             onChange={(e) => setForm((f) => ({ ...f, dailyReportChannelId: e.target.value }))}
           >
@@ -263,7 +264,7 @@ export default function Automation() {
                 {c.label || c.display_phone_number || c.id}
               </option>
             ))}
-          </select>
+          </Pilih>
           <small className="field-hint">Nomor WhatsApp yang dipakai untuk mengirim laporan harian ke owner.</small>
         </div>
 

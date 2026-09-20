@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
 import ActionBtn from "../components/ActionBtn";
+import Pilih from "../components/Pilih";
 
 const PAGE_SIZE = 20;
 
@@ -97,13 +98,13 @@ export default function FollowUps() {
 
       <div className="toolbar" style={{ marginBottom: 14 }}>
         <div className="field" style={{ marginBottom: 0, minWidth: 200 }}>
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Pilih value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             {STATUS_OPTIONS.map((s) => (
               <option key={s.value} value={s.value}>
                 {s.label}
               </option>
             ))}
-          </select>
+          </Pilih>
         </div>
       </div>
 

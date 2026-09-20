@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import Modal from "./Modal";
+import Pilih from "./Pilih";
 
 /**
  * Popup untuk menyambungkan nomor tim lewat QR code / kode pairing (BUKA
@@ -70,10 +71,10 @@ export default function QrConnectModal({ channel, onClose, onConnected }) {
           {error && <div className="error-box">{error}</div>}
           <div className="field" style={{ marginBottom: 12 }}>
             <label>Metode Sambung</label>
-            <select value={method} onChange={(e) => setMethod(e.target.value)}>
+            <Pilih value={method} onChange={(e) => setMethod(e.target.value)}>
               <option value="qr">Scan QR Code</option>
               <option value="pairing">Kode Pairing (tanpa kamera)</option>
-            </select>
+            </Pilih>
           </div>
           {method === "pairing" && (
             <div className="field" style={{ marginBottom: 12 }}>

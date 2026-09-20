@@ -5,6 +5,7 @@ import DateRangeFilter from "../components/DateRangeFilter";
 import { defaultRange } from "../dateRangePresets";
 import SearchField from "../components/SearchField";
 import ActionBtn from "../components/ActionBtn";
+import Pilih from "../components/Pilih";
 
 const PAGE_SIZE = 50;
 
@@ -215,14 +216,14 @@ export default function Contacts() {
           style={{ maxWidth: 260 }}
         />
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <select value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)} style={{ maxWidth: 200 }}>
+          <Pilih value={labelFilter} onChange={(e) => setLabelFilter(e.target.value)} style={{ maxWidth: 200 }}>
             <option value="">Semua Label</option>
             {labelOptions.map((l) => (
               <option key={l} value={l}>
                 {l}
               </option>
             ))}
-          </select>
+          </Pilih>
           <DateRangeFilter value={range} onChange={setRange} />
         </div>
       </div>

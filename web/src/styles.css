@@ -3326,7 +3326,28 @@ tr:last-child td { border-bottom: none; }
 
 /* ---------- Kotak centang bertema ---------- */
 .chk { display: inline-flex; }
-.chk-input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+/* Input asli disembunyikan TAPI tetap ada demi keyboard dan pembaca layar.
+   Pemilihnya sengaja dua kelas (.chk .chk-input), bukan satu.
+
+   Dengan satu kelas, aturan umum `.field input { width: 100% }` menang —
+   kekhususannya (0,1,1) mengalahkan (0,1,0) — dan kotak centang yang
+   "tersembunyi" ini melar jadi selebar induknya. Karena ia absolut, ia
+   menjulur keluar layar dan mendorong SELURUH halaman melebar; di ponsel
+   itu muncul sebagai gulir mendatar 39px di Laporan Order, Leads, dan
+   Pengaturan Otomatisasi. Tiga halaman rusak gara-gara satu kekhususan. */
+.chk .chk-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(50%);
+  pointer-events: none;
+}
 .chk-label { display: inline-flex; align-items: center; gap: 9px; cursor: pointer; font-size: 13.5px; line-height: 1.35; }
 .chk-box {
   width: 19px;
@@ -3340,13 +3361,13 @@ tr:last-child td { border-bottom: none; }
   color: transparent;
   transition: background-color .15s ease, border-color .15s ease, color .15s ease;
 }
-.chk-input:checked + .chk-label .chk-box {
+.chk .chk-input:checked + .chk-label .chk-box {
   background: linear-gradient(135deg, var(--side-active), var(--accent-cyan-solid));
   border-color: transparent;
   color: #fff;
 }
 .chk-label:hover .chk-box { border-color: var(--accent-violet); }
-.chk-input:focus-visible + .chk-label .chk-box { box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.32); }
+.chk .chk-input:focus-visible + .chk-label .chk-box { box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.32); }
 .chk-disabled .chk-label { opacity: 0.5; cursor: not-allowed; }
 .chk-text { color: var(--text); }
 
@@ -3920,6 +3941,14 @@ a.plat-kpi:hover { border-color: #38bdf8; transform: translateY(-1px); }
   pointer-events: none;
   overflow: hidden;
   border-radius: 32px;
+  /* Gumpalan aurora lebih besar daripada wadahnya dan dipotong `overflow`.
+     Karena gumpalannya jauh lebih terang daripada latar halaman, garis
+     potongnya TERLIHAT — sebuah tepi kotak membulat yang melintas persis di
+     atas logo. Topeng ini membuat seluruh isinya memudar habis sebelum
+     mencapai batas, jadi garis potongnya jatuh di daerah yang sudah
+     transparan dan tidak ada tepi yang bisa terlihat. */
+  mask-image: radial-gradient(88% 86% at 50% 42%, #000 0%, #000 42%, transparent 88%);
+  -webkit-mask-image: radial-gradient(88% 86% at 50% 42%, #000 0%, #000 42%, transparent 88%);
 }
 .lv-aurora-blob {
   position: absolute;
@@ -4564,3 +4593,474 @@ a.plat-kpi:hover { border-color: #38bdf8; transform: translateY(-1px); }
 /* Tautan profil resmi di kaki halaman panduan. */
 .pnd-sosial { color: #7dd3fc; text-decoration: none; }
 .pnd-sosial:hover { text-decoration: underline; }
+
+/* ==================================================================
+   DROPDOWN BERTEMA (components/Pilih.jsx)
+
+   Menggantikan <select> bawaan, yang daftar pilihannya digambar oleh
+   sistem operasi dan karena itu MUSTAHIL ditata lewat CSS. Di macOS
+   panelnya abu-abu gaya Mac, di Android lembar bawaan Android —
+   satu-satunya bagian aplikasi yang terlihat bukan milik kita, dan
+   justru muncul tepat saat pengguna sedang memilih.
+   ================================================================== */
+
+.pilih { position: relative; width: 100%; }
+
+/* --- Pemicu: dibuat serupa dengan .field input supaya sebaris rapi --- */
+.pilih-pemicu {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text);
+  font-size: 15px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pilih-pemicu:hover:not(:disabled) { border-color: #c3cad8; }
+.pilih-pemicu:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--focus-ring);
+}
+.pilih-buka .pilih-pemicu { border-color: var(--primary); }
+.pilih-mati .pilih-pemicu { opacity: 0.55; cursor: not-allowed; }
+
+.pilih-nilai {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pilih-kosong { color: var(--text-muted); }
+
+.pilih-panah {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  transform: rotate(90deg);
+  transition: transform 0.18s ease;
+}
+.pilih-buka .pilih-panah { transform: rotate(-90deg); }
+
+/* --- Panel --- */
+.pilih-panel {
+  position: absolute;
+  z-index: 1200;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  min-width: 100%;
+  max-height: 264px;
+  overflow-y: auto;
+  padding: 5px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  box-shadow: 0 14px 36px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(15, 23, 42, 0.06);
+  animation: pilih-masuk 0.14s ease-out;
+}
+.pilih-panel-atas { top: auto; bottom: calc(100% + 6px); animation-name: pilih-masuk-atas; }
+@keyframes pilih-masuk {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pilih-masuk-atas {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+.pilih-opsi {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  line-height: 1.4;
+  color: var(--text);
+  cursor: pointer;
+}
+.pilih-opsi span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pilih-opsi-sorot { background: var(--surface-2); }
+.pilih-opsi-aktif { font-weight: 600; color: var(--primary); }
+.pilih-opsi-aktif svg { flex: 0 0 auto; }
+.pilih-opsi-mati { opacity: 0.45; cursor: not-allowed; }
+.pilih-opsi-mati:hover { background: transparent; }
+
+.pilih-grup {
+  padding: 9px 11px 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.pilih-kosong-panel { padding: 14px 11px; font-size: 14px; color: var(--text-muted); text-align: center; }
+
+/* Tirai hanya dipakai di ponsel. */
+.pilih-tirai { display: none; }
+
+/* --- Mode gelap --- */
+[data-theme="dark"] .pilih-pemicu { background: #12141a; color: var(--text); }
+[data-theme="dark"] .pilih-pemicu:hover:not(:disabled) { border-color: #39414f; }
+[data-theme="dark"] .pilih-panel {
+  background: #151821;
+  border-color: #2b313d;
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.55);
+}
+[data-theme="dark"] .pilih-opsi-sorot { background: #1e2330; }
+
+/* --- Di dalam .field: labelnya sudah ada di atas, jadi lebarnya penuh --- */
+.field .pilih { width: 100%; }
+
+/* --- PONSEL: panel melayang diganti lembar bawah --------------------
+   Panel selebar pemicu tidak terpakai di layar sempit: daftar panjang
+   jadi tidak terbaca, dan posisinya sering tertutup papan ketik. */
+@media (max-width: 640px) {
+  .pilih-tirai {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    background: rgba(8, 11, 18, 0.5);
+    animation: pilih-tirai-masuk 0.16s ease-out;
+  }
+  @keyframes pilih-tirai-masuk { from { opacity: 0; } to { opacity: 1; } }
+
+  .pilih-panel,
+  .pilih-panel-atas {
+    position: fixed;
+    z-index: 1301;
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 64vh;
+    padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0px));
+    border-radius: 18px 18px 0 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+    animation: pilih-lembar 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes pilih-lembar {
+    from { transform: translateY(100%); }
+    to { transform: none; }
+  }
+  /* Gagang kecil supaya jelas ini lembar yang bisa ditutup. */
+  .pilih-panel::before {
+    content: "";
+    display: block;
+    width: 38px;
+    height: 4px;
+    margin: 2px auto 10px;
+    border-radius: 99px;
+    background: var(--border);
+  }
+  /* Sasaran sentuh minimal 44px — jari bukan kursor. */
+  .pilih-opsi { padding: 13px 13px; font-size: 15.5px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pilih-panel, .pilih-tirai { animation: none; }
+  .pilih-panah { transition: none; }
+}
+
+/* ==================================================================
+   PENYESUAI FOTO PROFIL (components/PemotongFoto.jsx)
+
+   Sebelumnya gambar diperkecil dengan menjaga rasio aslinya, lalu
+   lingkaran avatar memotongnya dari TENGAH lewat object-fit: cover.
+   Foto potret kehilangan dahi dan dagu, dan pemiliknya tidak punya
+   cara apa pun mengatur bagian mana yang dipakai. Sekarang keluarannya
+   bujur sangkar dan bingkainya dipilih sendiri.
+   ================================================================== */
+
+.pfoto-petunjuk {
+  margin: 0 0 14px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+
+.pfoto-panggung {
+  position: relative;
+  width: 320px;
+  height: 320px;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0e1220;
+  cursor: grab;
+  /* Jari menggeser GAMBAR, bukan halaman di belakangnya. */
+  touch-action: none;
+  user-select: none;
+}
+.pfoto-panggung:active { cursor: grabbing; }
+.pfoto-gambar { position: absolute; max-width: none; pointer-events: none; }
+.pfoto-memuat {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #93a0b8;
+  font-size: 14px;
+}
+
+/* Lubang lingkaran: yang di luar diredupkan, tepinya ditandai garis tipis.
+   Dibuat dengan box-shadow raksasa supaya tidak butuh dua elemen. */
+.pfoto-topeng {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 12px;
+}
+.pfoto-topeng::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 9999px rgba(8, 11, 18, 0.62);
+  border: 2px solid rgba(255, 255, 255, 0.85);
+}
+
+.pfoto-zoom {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin: 16px auto 0;
+  max-width: 320px;
+  color: var(--text-muted);
+}
+.pfoto-zoom input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--primary);
+  /* Sasaran sentuh yang wajar untuk jari. */
+  height: 26px;
+}
+.pfoto-zoom-nilai {
+  font-size: 13px;
+  font-family: var(--font-mono);
+  min-width: 38px;
+  text-align: right;
+}
+
+.pfoto-aksi {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+@media (max-width: 460px) {
+  .pfoto-panggung { width: 100%; height: min(78vw, 320px); }
+  .pfoto-aksi { flex-direction: column-reverse; }
+  .pfoto-aksi .btn, .pfoto-aksi .btn.secondary { width: 100%; }
+}
+
+/* ==================================================================
+   GELOMBANG KEDUA VISUAL HALAMAN DEPAN (pages/LandingSeni.jsx)
+
+   Dua aturan yang mengikat seluruh blok ini:
+
+   1. Isinya TERLIHAT secara bawaan. Animasi masuk hanya ditambahkan
+      setelah JavaScript hidup (kelas .muncul dipasang React). Kalau
+      dibalik — mulai transparan lalu dimunculkan JS — Googlebot dan
+      siapa pun yang JS-nya gagal akan melihat halaman kosong. Itu
+      persis kesalahan yang sedang kita perbaiki di situs ini.
+   2. Semua gerak berhenti di bawah prefers-reduced-motion.
+   ================================================================== */
+
+.muncul {
+  opacity: 1;
+  transform: none;
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* Hanya saat JS hidup: mulai dari bawah dan transparan... */
+.js-hidup .muncul { opacity: 0; transform: translateY(22px); }
+/* ...lalu naik saat tergulir ke layar. */
+.js-hidup .muncul-tampak { opacity: 1; transform: none; }
+
+/* --- Butir cahaya yang hanyut di hero --- */
+.butir-lapis { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.butir {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(125, 211, 252, 0.85);
+  box-shadow: 0 0 8px 2px rgba(125, 211, 252, 0.45);
+  animation-name: butir-hanyut;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  opacity: 0;
+}
+@keyframes butir-hanyut {
+  0% { opacity: 0; transform: translate3d(0, 14px, 0) scale(0.7); }
+  22% { opacity: 0.9; }
+  78% { opacity: 0.55; }
+  100% { opacity: 0; transform: translate3d(22px, -70px, 0) scale(1.15); }
+}
+
+/* --- Ilustrasi misi --------------------------------------------- */
+.landing-misi li { position: relative; overflow: hidden; }
+.seni-misi {
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 88px;
+  height: 88px;
+  flex: 0 0 auto;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+.landing-misi li > div { padding-right: 96px; }
+
+.seni-misi .sm-gel { fill: rgba(34, 211, 238, 0.16); stroke: #67e8f9; stroke-width: 1.6; }
+.seni-misi .sm-gel-b { fill: rgba(34, 197, 94, 0.2); stroke: #4ade80; }
+.seni-misi .sm-titik { fill: #a5f3fc; stroke: none; animation: sm-pantul 1.35s ease-in-out infinite; }
+.seni-misi .sm-titik-2 { animation-delay: 0.17s; }
+.seni-misi .sm-titik-3 { animation-delay: 0.34s; }
+@keyframes sm-pantul { 0%, 65%, 100% { opacity: 0.35; } 30% { opacity: 1; } }
+.seni-misi .sm-centang {
+  stroke: #4ade80; stroke-width: 2.6;
+  stroke-dasharray: 26; stroke-dashoffset: 26;
+  animation: sm-gores 2.6s ease-in-out infinite;
+}
+.seni-misi .sm-centang-kecil { stroke-dasharray: 14; stroke-dashoffset: 14; }
+@keyframes sm-gores {
+  0%, 18% { stroke-dashoffset: 26; }
+  42%, 82% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 26; }
+}
+
+.seni-misi .sm-kartu { fill: rgba(129, 140, 248, 0.1); stroke: #a5b4fc; stroke-width: 1.6; }
+.seni-misi .sm-baris { stroke: #c4b5fd; stroke-width: 2.4; stroke-dasharray: 40; animation: sm-isi 3.2s ease-in-out infinite; }
+.seni-misi .sm-baris-2 { animation-delay: 0.35s; }
+.seni-misi .sm-baris-3 { animation-delay: 0.7s; }
+@keyframes sm-isi {
+  0%, 10% { stroke-dashoffset: 40; opacity: 0.25; }
+  45%, 85% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 40; opacity: 0.25; }
+}
+.seni-misi .sm-tanda { fill: rgba(34, 197, 94, 0.22); stroke: #4ade80; stroke-width: 1.4; }
+
+.seni-misi .sm-sumber { fill: rgba(34, 211, 238, 0.2); stroke: #67e8f9; stroke-width: 1.7; }
+.seni-misi .sm-cabang { stroke: #7dd3fc; stroke-width: 1.7; stroke-dasharray: 3 5; animation: sm-alir 1.8s linear infinite; }
+@keyframes sm-alir { to { stroke-dashoffset: -16; } }
+.seni-misi .sm-daun { fill: rgba(139, 92, 246, 0.18); stroke: #c4b5fd; stroke-width: 1.5; }
+.seni-misi .sm-daun-2 { animation: sm-kedip 3s ease-in-out infinite 0.4s; }
+.seni-misi .sm-daun-1 { animation: sm-kedip 3s ease-in-out infinite; }
+.seni-misi .sm-daun-3 { animation: sm-kedip 3s ease-in-out infinite 0.8s; }
+@keyframes sm-kedip { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+
+.seni-misi .sm-sumbu { stroke: rgba(148, 163, 214, 0.5); stroke-width: 1.6; }
+.seni-misi .sm-batang { fill: rgba(34, 211, 238, 0.55); stroke: none; transform-origin: bottom; animation: sm-tumbuh 3.4s ease-in-out infinite; }
+.seni-misi .sm-batang-2 { animation-delay: 0.18s; }
+.seni-misi .sm-batang-3 { animation-delay: 0.36s; }
+.seni-misi .sm-batang-4 { animation-delay: 0.54s; fill: rgba(139, 92, 246, 0.7); }
+@keyframes sm-tumbuh {
+  0%, 8% { transform: scaleY(0.55); }
+  40%, 80% { transform: scaleY(1); }
+  100% { transform: scaleY(0.55); }
+}
+.seni-misi .sm-garis-tren {
+  stroke: #4ade80; stroke-width: 2.2;
+  stroke-dasharray: 70; stroke-dashoffset: 70;
+  animation: sm-gores-tren 3.4s ease-in-out infinite;
+}
+@keyframes sm-gores-tren {
+  0%, 12% { stroke-dashoffset: 70; }
+  50%, 84% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: 70; }
+}
+ /* Atribut `r` SVG tidak bisa dianimasikan CSS di semua peramban —
+    Safari mengabaikannya. transform+transform-origin bekerja di mana saja. */
+.seni-misi .sm-denyut {
+  fill: #4ade80; stroke: none;
+  transform-origin: 64px 18px;
+  animation: sm-denyut 2s ease-out infinite;
+}
+@keyframes sm-denyut {
+  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1.35); }
+}
+
+/* --- Ilustrasi batas kemampuan ----------------------------------- */
+.seni-batas {
+  width: 58px;
+  height: 58px;
+  margin-bottom: 12px;
+  display: block;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.seni-batas .sb-bingkai, .seni-batas .sb-kartu { stroke: #fde68a; stroke-width: 1.7; fill: rgba(253, 230, 138, 0.07); }
+.seni-batas .sb-garis { stroke: rgba(253, 230, 138, 0.55); stroke-width: 2; }
+.seni-batas .sb-tanya { fill: rgba(253, 230, 138, 0.16); stroke: #fde68a; stroke-width: 1.5; }
+.seni-batas .sb-tanya-t { stroke: #fde68a; stroke-width: 1.7; }
+.seni-batas .sb-tanya-d { fill: #fde68a; stroke: none; }
+.seni-batas .sb-kepala, .seni-batas .sb-badan { stroke: #fde68a; stroke-width: 1.8; }
+.seni-batas .sb-mesin, .seni-batas .sb-mesin-b { stroke: rgba(253, 230, 138, 0.55); stroke-width: 1.6; }
+.seni-batas .sb-panah { stroke: #fde68a; stroke-width: 1.8; stroke-dasharray: 3 4; animation: sm-alir 1.6s linear infinite; }
+.seni-batas .sb-sumbu, .seni-batas .sb-datar { stroke: rgba(253, 230, 138, 0.45); stroke-width: 1.7; }
+.seni-batas .sb-datar { stroke-dasharray: 4 5; }
+.seni-batas .sb-tanya-naik { stroke: #fde68a; stroke-width: 2; stroke-dasharray: 3 5; }
+.seni-batas .sb-ujung { fill: rgba(253, 230, 138, 0.5); stroke: #fde68a; stroke-width: 1.3; }
+
+/* --- Ikon layanan ikut bergerak saat kartunya disentuh ----------- */
+.landing-features article { transition: border-color 0.2s ease, transform 0.2s ease; }
+.landing-features article:hover { transform: translateY(-3px); }
+.landing-features article:hover .landing-feature-icon { transform: scale(1.12) rotate(-4deg); }
+.landing-feature-icon { transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+
+/* --- Denyut yang mengalir di pita alur --------------------------- */
+.lv-alur-garis { overflow: visible; }
+.lv-alur-garis::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #a5f3fc;
+  box-shadow: 0 0 9px 2px rgba(165, 243, 252, 0.7);
+  animation: alur-denyut 3.2s ease-in-out infinite;
+}
+.lv-alur-item:nth-child(2) .lv-alur-garis::after { animation-delay: 0.5s; }
+.lv-alur-item:nth-child(3) .lv-alur-garis::after { animation-delay: 1s; }
+.lv-alur-item:nth-child(4) .lv-alur-garis::after { animation-delay: 1.5s; }
+@keyframes alur-denyut {
+  0% { left: 0; opacity: 0; }
+  15% { opacity: 1; }
+  85% { opacity: 1; }
+  100% { left: 100%; opacity: 0; }
+}
+
+/* --- Layar kecil --- */
+@media (max-width: 720px) {
+  .seni-misi { position: static; transform: none; width: 64px; height: 64px; margin-top: 12px; }
+  .landing-misi li > div { padding-right: 0; }
+  .landing-misi li { flex-wrap: wrap; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .muncul, .js-hidup .muncul { opacity: 1 !important; transform: none !important; transition: none; }
+  .butir, .seni-misi *, .seni-batas *, .lv-alur-garis::after { animation: none !important; }
+  .landing-features article:hover { transform: none; }
+  .landing-features article:hover .landing-feature-icon { transform: none; }
+}

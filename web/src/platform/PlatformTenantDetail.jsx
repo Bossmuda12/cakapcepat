@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import Icon from "../components/Icon";
 import { platformApi } from "./api";
 import { StatusBadge } from "./PlatformTenants";
+import Pilih from "../components/Pilih";
 
 /**
  * Setiap tindakan dijelaskan apa akibatnya SEBELUM diklik, bukan sesudah.
@@ -400,9 +401,9 @@ function AksesDukungan({ orgId, orgNama }) {
               </div>
               <div className="field" style={{ maxWidth: 200 }}>
                 <label htmlFor="jm">Berlaku berapa jam</label>
-                <select id="jm" value={form.hours} onChange={(e) => setForm((f) => ({ ...f, hours: Number(e.target.value) }))}>
+                <Pilih id="jm" value={form.hours} onChange={(e) => setForm((f) => ({ ...f, hours: Number(e.target.value) }))}>
                   {[1, 2, 4, 8].map((h) => <option key={h} value={h}>{h} jam</option>)}
-                </select>
+                </Pilih>
                 <small className="field-hint">Maksimal 8 jam — izin berhari-hari praktis sama dengan akses permanen.</small>
               </div>
               <button className="btn" type="submit" disabled={busy || form.purpose.trim().length < 15}>

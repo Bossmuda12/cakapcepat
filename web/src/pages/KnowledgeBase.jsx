@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Modal from "../components/Modal";
+import Pilih from "../components/Pilih";
 
 const emptyForm = { title: "", content: "", productId: "" };
 
@@ -93,14 +94,14 @@ export default function KnowledgeBase() {
           </div>
           <div className="field">
             <label>Produk (opsional)</label>
-            <select value={form.productId} onChange={update("productId")}>
+            <Pilih value={form.productId} onChange={update("productId")}>
               <option value="">Umum — semua produk</option>
               {products.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
-            </select>
+            </Pilih>
           </div>
           <div className="field">
             <label>Isi</label>

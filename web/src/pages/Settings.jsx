@@ -2,34 +2,7 @@ import { useRef, useState } from "react";
 import { useAuth } from "../AuthContext";
 import { api } from "../api";
 import PasswordInput from "../components/PasswordInput";
-
-// Resize + kompres gambar di browser sebelum dikirim ke server, supaya foto
-// profil dari kamera HP (bisa 5-10MB) tidak membebani body request. Hasil
-// akhir data URL JPEG max 320x320, jadi selalu jauh di bawah batas 1.4MB
-// yang dicek backend.
-function resizeImageToDataUrl(file, maxSize = 320, quality = 0.85) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Gagal membaca file"));
-    reader.onload = () => {
-      const img = new Image();
-      img.onerror = () => reject(new Error("File bukan gambar yang valid"));
-      img.onload = () => {
-        const scale = Math.min(1, maxSize / Math.max(img.width, img.height));
-        const w = Math.round(img.width * scale);
-        const h = Math.round(img.height * scale);
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL("image/jpeg", quality));
-      };
-      img.src = reader.result;
-    };
-    reader.readAsDataURL(file);
-  });
-}
+import PemotongFoto from "../components/PemotongFoto";
 
 export default function Settings() {
   const { user, refresh } = useAuth();
@@ -43,6 +16,9 @@ export default function Settings() {
   const [email, setEmail] = useState(user?.email || "");
   const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || "");
   const [avatarDataUrl, setAvatarDataUrl] = useState(null); // null = tak berubah
+  /* Berkas mentah yang sedang disesuaikan. Selama ini tidak nol, dialog
+     penyesuai terbuka — memilih berkas TIDAK lagi langsung mengunggah. */
+  const [fotoMentah, setFotoMentah] = useState(null);
   const [profileBusy, setProfileBusy] = useState(false);
   const [profileError, setProfileError] = useState("");
   const [profileSuccess, setProfileSuccess] = useState("");
@@ -57,7 +33,7 @@ export default function Settings() {
 
   const initials = (name || user?.email || "?").trim().charAt(0).toUpperCase();
 
-  const onPickAvatar = async (e) => {
+  const onPickAvatar = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setProfileError("");
@@ -69,13 +45,19 @@ export default function Settings() {
       setProfileError("Ukuran file maksimal 8MB.");
       return;
     }
-    try {
-      const dataUrl = await resizeImageToDataUrl(file);
-      setAvatarDataUrl(dataUrl);
-      setAvatarPreview(dataUrl);
-    } catch (err) {
-      setProfileError(err.message || "Gagal memproses gambar");
-    }
+    /* Berkasnya TIDAK langsung diproses: dialog penyesuai dibuka dulu supaya
+       pemiliknya menentukan sendiri bagian mana yang dipakai. */
+    setFotoMentah(file);
+    /* Kosongkan input supaya memilih berkas yang SAMA lagi tetap memicu
+       onChange — kalau tidak, membatalkan lalu memilih foto itu lagi tidak
+       akan terjadi apa-apa dan terlihat seperti tombolnya rusak. */
+    e.target.value = "";
+  };
+
+  const onSelesaiPotong = (dataUrl) => {
+    setAvatarDataUrl(dataUrl);
+    setAvatarPreview(dataUrl);
+    setFotoMentah(null);
   };
 
   const onRemoveAvatar = () => {
@@ -195,9 +177,19 @@ export default function Settings() {
                       Hapus Foto
                     </button>
                   )}
+                  <small className="field-hint">
+                    Foto akan dipotong jadi bujur sangkar. Kamu yang menentukan bingkainya.
+                  </small>
                 </div>
               </div>
             </div>
+
+            <PemotongFoto
+              open={Boolean(fotoMentah)}
+              file={fotoMentah}
+              onSelesai={onSelesaiPotong}
+              onBatal={() => setFotoMentah(null)}
+            />
             <div className="field">
               <label>Nama</label>
               <input value={name} onChange={(e) => setName(e.target.value)} required />
