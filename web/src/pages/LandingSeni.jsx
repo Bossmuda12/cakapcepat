@@ -139,28 +139,28 @@ export function SeniBatas({ nama }) {
   const gambar = {
     materi: (
       <g>
-        <path className="sb-garis" d="M14 18h36M14 30h36M14 42h22" />
-        <rect className="sb-bingkai" x="6" y="8" width="52" height="48" rx="7" />
-        <circle className="sb-tanya" cx="48" cy="46" r="10" />
-        <path className="sb-tanya-t" d="M45.4 43.2a2.8 2.8 0 1 1 3.4 3.1v1.6" />
-        <circle className="sb-tanya-d" cx="48.4" cy="51" r="1.1" />
+        <path className="sb-garis" d="M14 18h36M14 30h36M14 42h22" pathLength="1" />
+        <rect className="sb-bingkai" x="6" y="8" width="52" height="48" rx="7" pathLength="1" />
+        <circle className="sb-tanya" cx="48" cy="46" r="10" pathLength="1" />
+        <path className="sb-tanya-t" d="M45.4 43.2a2.8 2.8 0 1 1 3.4 3.1v1.6" pathLength="1" />
+        <circle className="sb-tanya-d" cx="48.4" cy="51" r="1.1" pathLength="1" />
       </g>
     ),
     manusia: (
       <g>
-        <circle className="sb-kepala" cx="24" cy="22" r="8" />
-        <path className="sb-badan" d="M11 48c0-7.2 5.8-13 13-13s13 5.8 13 13" />
-        <circle className="sb-mesin" cx="46" cy="26" r="7" />
-        <path className="sb-mesin-b" d="M36 50c0-5.5 4.5-10 10-10s10 4.5 10 10" />
-        <path className="sb-panah" d="M33 34h8" />
+        <circle className="sb-kepala" cx="24" cy="22" r="8" pathLength="1" />
+        <path className="sb-badan" d="M11 48c0-7.2 5.8-13 13-13s13 5.8 13 13" pathLength="1" />
+        <circle className="sb-mesin" cx="46" cy="26" r="7" pathLength="1" />
+        <path className="sb-mesin-b" d="M36 50c0-5.5 4.5-10 10-10s10 4.5 10 10" pathLength="1" />
+        <path className="sb-panah" d="M33 34h8" pathLength="1" />
       </g>
     ),
     janji: (
       <g>
-        <path className="sb-sumbu" d="M10 50h44" />
-        <path className="sb-datar" d="M14 40h36" />
-        <path className="sb-tanya-naik" d="M14 44 L26 36 L38 40 L50 26" />
-        <circle className="sb-ujung" cx="50" cy="26" r="3.6" />
+        <path className="sb-sumbu" d="M10 50h44" pathLength="1" />
+        <path className="sb-datar" d="M14 40h36" pathLength="1" />
+        <path className="sb-tanya-naik" d="M14 44 L26 36 L38 40 L50 26" pathLength="1" />
+        <circle className="sb-ujung" cx="50" cy="26" r="3.6" pathLength="1" />
       </g>
     ),
   };

@@ -5064,3 +5064,196 @@ a.plat-kpi:hover { border-color: #38bdf8; transform: translateY(-1px); }
   .landing-features article:hover { transform: none; }
   .landing-features article:hover .landing-feature-icon { transform: none; }
 }
+
+/* ==================================================================
+   GERAK LANJUTAN HALAMAN DEPAN
+
+   Tiga bagian tengah halaman — Layanan, Cara Kerja, dan Batas
+   kemampuan — sebelumnya berisi ikon garis yang diam sepenuhnya, dan
+   pratinjau dasbor hanya bergerak sekali saat halaman dimuat (jadi
+   sudah selesai sebelum pengunjung sempat menggulir ke sana). Bagian
+   ini menghidupkan semuanya.
+
+   ATURAN YANG DIPATUHI DI SINI
+
+   1. Semua gerak memakai `stroke-dashoffset`, `opacity`, `filter`, dan
+      `transform` pada elemen yang TIDAK dipakai hover. Ikon layanan
+      sudah memakai `transform` untuk efek hover (baris ~5027), jadi di
+      sini transform-nya sengaja tidak disentuh — kalau ditimpa animasi
+      infinite, hover-nya mati.
+
+   2. Panjang garis dinormalkan dengan atribut `pathLength="1"` di
+      JSX-nya, bukan dengan menebak `stroke-dasharray` per bentuk.
+      Menebak panjang path berarti setiap ikon butuh angka sendiri dan
+      akan salah begitu ikonnya diganti.
+
+   3. Semua gerak berhenti di bawah `prefers-reduced-motion` (blok di
+      paling bawah berkas ini sudah menanganinya, dan ditambah di sini).
+   ================================================================== */
+
+/* --- Celah cahaya yang berjalan menyusuri garis -------------------
+   Versi pertama memakai efek "garis menggambar dirinya sendiri"
+   (dashoffset 1 -> 0 -> -1). Ketahuan begitu dipotret di tengah
+   putaran: ikonnya tertangkap setengah jadi dan terbaca seperti
+   gambar rusak, bukan gambar yang sedang bergerak — pada ukuran 24px
+   sampai 58px, garis yang hilang sebagian tidak terbaca sebagai
+   animasi sama sekali.
+
+   Jadi polanya dibalik: garisnya SELALU utuh, dan yang bergerak
+   hanyalah satu celah kecil (10% panjang garis) yang berjalan
+   menyusurinya. Paling buruk pun hanya sepersepuluh garis yang hilang
+   pada satu saat, dan matanya membaca itu sebagai kilau yang berjalan. */
+@keyframes kilau-berjalan { to { stroke-dashoffset: -1; } }
+@keyframes kilau-napas {
+  0%, 100% { opacity: 0.78; }
+  50%      { opacity: 1; }
+}
+
+/* --- Ikon layanan (6 kartu) --------------------------------------- */
+.landing-feature-icon path {
+  stroke-dasharray: 0.9 0.1;
+  animation: kilau-berjalan 4.2s linear infinite, kilau-napas 4.2s ease-in-out infinite;
+}
+.landing-features > *:nth-child(2) .landing-feature-icon path { animation-delay: -0.7s; }
+.landing-features > *:nth-child(3) .landing-feature-icon path { animation-delay: -1.4s; }
+.landing-features > *:nth-child(4) .landing-feature-icon path { animation-delay: -2.1s; }
+.landing-features > *:nth-child(5) .landing-feature-icon path { animation-delay: -2.8s; }
+.landing-features > *:nth-child(6) .landing-feature-icon path { animation-delay: -3.5s; }
+
+/* --- Ikon langkah (4 kartu cara kerja) ---------------------------- */
+.lv-step-art > * {
+  stroke-dasharray: 0.88 0.12;
+  animation: kilau-berjalan 3.6s linear infinite, kilau-napas 3.6s ease-in-out infinite;
+}
+.lv-step-art > *:nth-child(2) { animation-delay: -0.3s; }
+.lv-step-art > *:nth-child(3) { animation-delay: -0.6s; }
+.lv-step-art > *:nth-child(4) { animation-delay: -0.9s; }
+.landing-steps > *:nth-child(2) .lv-step-art > * { animation-delay: -0.9s; }
+.landing-steps > *:nth-child(3) .lv-step-art > * { animation-delay: -1.8s; }
+.landing-steps > *:nth-child(4) .lv-step-art > * { animation-delay: -2.7s; }
+
+/* Nomor langkah ikut berdenyut pelan supaya urutannya terbaca. */
+@keyframes langkah-denyut {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(34, 211, 238, 0); }
+  45%      { box-shadow: 0 0 0 6px rgba(34, 211, 238, 0.09); }
+}
+.landing-step-no { animation: langkah-denyut 4.8s ease-in-out infinite; }
+.landing-steps > *:nth-child(2) .landing-step-no { animation-delay: 1.2s; }
+.landing-steps > *:nth-child(3) .landing-step-no { animation-delay: 2.4s; }
+.landing-steps > *:nth-child(4) .landing-step-no { animation-delay: 3.6s; }
+
+/* --- Ilustrasi "batas kemampuan" ---------------------------------- */
+/* Nadanya sengaja paling lambat di halaman ini: bagian ini memang
+   tentang menurunkan harapan, bukan menaikkannya. */
+.seni-batas .sb-garis,
+.seni-batas .sb-bingkai,
+.seni-batas .sb-badan,
+.seni-batas .sb-mesin-b,
+.seni-batas .sb-sumbu {
+  stroke-dasharray: 0.92 0.08;
+  animation: kilau-berjalan 6.5s linear infinite, kilau-napas 6.5s ease-in-out infinite;
+}
+.seni-batas .sb-bingkai { animation-delay: -1.6s; }
+.seni-batas .sb-badan { animation-delay: -0.8s; }
+
+/* `sb-datar` dan `sb-tanya-naik` SENGAJA tetap putus-putus — pola itu
+   yang menyampaikan "belum pasti". Jadi polanya tidak diganti; hanya
+   dash-nya yang dijalankan. */
+.seni-batas .sb-datar { animation: sm-alir 2.6s linear infinite; }
+.seni-batas .sb-tanya-naik { animation: sm-alir 2s linear infinite; }
+
+@keyframes batas-denyut {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  50%      { opacity: 1;   transform: scale(1.07); }
+}
+.seni-batas .sb-tanya,
+.seni-batas .sb-ujung,
+.seni-batas .sb-kepala,
+.seni-batas .sb-mesin {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: batas-denyut 5.2s ease-in-out infinite;
+}
+.seni-batas .sb-mesin { animation-delay: 0.9s; }
+.seni-batas .sb-ujung { animation-delay: 0.4s; }
+
+/* --- Pratinjau dasbor: terus terasa hidup ------------------------- */
+/* Batangnya tetap tumbuh dari nol seperti sebelumnya, lalu bernapas
+   supaya tidak membeku begitu animasi pertama selesai. */
+@keyframes lv-nafas {
+  0%, 100% { transform: scaleY(1); }
+  50%      { transform: scaleY(0.93); }
+}
+.lv-bar {
+  animation:
+    lv-tumbuh 1.1s cubic-bezier(0.22, 1, 0.36, 1) both,
+    lv-nafas 5.4s ease-in-out 1.3s infinite;
+}
+
+/* Menu aktif di sisi kiri berkedip pelan seperti tab yang sedang dibuka. */
+@keyframes nav-nyala {
+  0%, 100% { filter: brightness(1); }
+  50%      { filter: brightness(1.45); }
+}
+.lv-dash-nav-on { animation: nav-nyala 3.6s ease-in-out infinite; }
+
+/* "perlu cek" memang butuh perhatian — jadi dia yang berkedip. */
+@keyframes kpi-perlu-cek {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+.lv-kpi-warn { animation: kpi-perlu-cek 2.4s ease-in-out infinite; }
+
+/* Titik status pesanan menyala bergantian, seperti data yang masuk. */
+@keyframes titik-nyala {
+  0%, 100% { box-shadow: 0 0 0 0 currentColor; opacity: 0.75; }
+  40%      { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.07); opacity: 1; }
+}
+.lv-dot { animation: titik-nyala 3.2s ease-in-out infinite; }
+.lv-list li:nth-child(2) .lv-dot { animation-delay: 0.5s; }
+.lv-list li:nth-child(3) .lv-dot { animation-delay: 1s; }
+.lv-list li:nth-child(4) .lv-dot { animation-delay: 1.5s; }
+
+/* Sapuan cahaya tipis melintasi bingkai dasbor. Ditaruh di ::after
+   milik .lv-dash yang sudah overflow:hidden, dan pointer-events:none
+   supaya tidak menghalangi apa pun. */
+.lv-dash { position: relative; }
+.lv-dash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    105deg,
+    transparent 38%,
+    rgba(125, 211, 252, 0.07) 47%,
+    rgba(167, 139, 250, 0.1) 52%,
+    transparent 61%
+  );
+  transform: translateX(-120%);
+  animation: dasbor-sapuan 7.5s ease-in-out 1.8s infinite;
+}
+@keyframes dasbor-sapuan {
+  0%       { transform: translateX(-120%); }
+  55%, 100% { transform: translateX(120%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-feature-icon path,
+  .lv-step-art > *,
+  .landing-step-no,
+  .seni-batas *,
+  .lv-dash-nav-on,
+  .lv-kpi-warn,
+  .lv-dot,
+  .lv-dash::after {
+    animation: none !important;
+  }
+  .landing-feature-icon path,
+  .lv-step-art > *,
+  .seni-batas * {
+    stroke-dasharray: none !important;
+    stroke-dashoffset: 0 !important;
+    opacity: 1 !important;
+  }
+}

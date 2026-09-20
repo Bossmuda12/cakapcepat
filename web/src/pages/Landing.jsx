@@ -234,7 +234,7 @@ export default function Landing() {
             {LAYANAN.map((l, i) => (
               <Muncul as="article" key={l.judul} delay={i * 70}>
                 <svg viewBox="0 0 24 24" className="landing-feature-icon" aria-hidden="true">
-                  <path d={l.ikon} />
+                  <path d={l.ikon} pathLength="1" />
                 </svg>
                 <h3>{l.judul}</h3>
                 <p>{l.isi}</p>

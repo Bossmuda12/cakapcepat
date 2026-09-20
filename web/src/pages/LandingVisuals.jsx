@@ -185,30 +185,30 @@ export function IlustrasiLangkah({ nama }) {
   const gambar = {
     qr: (
       <>
-        <rect x="3" y="3" width="7" height="7" rx="1.5" />
-        <rect x="14" y="3" width="7" height="7" rx="1.5" />
-        <rect x="3" y="14" width="7" height="7" rx="1.5" />
-        <path d="M14 14h3v3h-3zM20 14h1M14 20h3M20 18v3" />
+        <rect x="3" y="3" width="7" height="7" rx="1.5" pathLength="1" />
+        <rect x="14" y="3" width="7" height="7" rx="1.5" pathLength="1" />
+        <rect x="3" y="14" width="7" height="7" rx="1.5" pathLength="1" />
+        <path d="M14 14h3v3h-3zM20 14h1M14 20h3M20 18v3" pathLength="1" />
       </>
     ),
     katalog: (
       <>
-        <path d="M20 7 12 3 4 7l8 4 8-4Z" />
-        <path d="M4 7v10l8 4 8-4V7" />
-        <path d="M12 11v10" />
+        <path d="M20 7 12 3 4 7l8 4 8-4Z" pathLength="1" />
+        <path d="M4 7v10l8 4 8-4V7" pathLength="1" />
+        <path d="M12 11v10" pathLength="1" />
       </>
     ),
     atur: (
       <>
-        <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
-        <circle cx="16" cy="7" r="2.4" />
-        <circle cx="10" cy="17" r="2.4" />
+        <path d="M4 7h10M18 7h2M4 17h4M12 17h8" pathLength="1" />
+        <circle cx="16" cy="7" r="2.4" pathLength="1" />
+        <circle cx="10" cy="17" r="2.4" pathLength="1" />
       </>
     ),
     pantau: (
       <>
-        <rect x="2.5" y="4" width="19" height="13" rx="2" />
-        <path d="M8 21h8M12 17v4M6.5 13l3-3.5 2.5 2.5 4-5" />
+        <rect x="2.5" y="4" width="19" height="13" rx="2" pathLength="1" />
+        <path d="M8 21h8M12 17v4M6.5 13l3-3.5 2.5 2.5 4-5" pathLength="1" />
       </>
     ),
   };
